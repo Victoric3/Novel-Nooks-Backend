@@ -1,0 +1,39 @@
+extends baseEmail
+
+block content
+  // Container for responsive layout
+  div(style="background-color: #f0f8ff; padding: 20px; border-radius: 10px; font-family: 'Arial', sans-serif; max-width: 600px; margin: 0;")
+
+    // Banner Image
+    div(style="text-align: center; margin-bottom: 20px;")
+      img(src="https://i.ibb.co/NmZbmmR/dd40e4ea1b2a.jpg", alt="Banner Image", style="width: 100%; max-width: 600px; border-radius: 10px; height: 250px;")
+
+    // Logo and site name
+    div(style="text-align: center; margin-bottom: 20px;")
+      img(src="https://i.ibb.co/NNbc0wp/logo-icon.png", alt= `${process.env.SITE_NAME} Logo`, style="height: 50px; border-radius: 50%; vertical-align: middle;")
+      span(style="font-size: 24px; font-weight: bold; vertical-align: middle; color: #004080; margin-left: 10px;")
+        | #{process.env.SITE_NAME}
+
+    // Welcome message and verification code
+    p(style="font-size: 16px; font-weight: normal; text-align: center; color: #004080; margin-bottom: 20px;")
+      | Thank you for creating an account with #{process.env.SITE_NAME}!
+      br
+      | Please enter the following verification code:
+
+    // Verification code
+    p(style="font-size: 28px; font-weight: bold; text-align: center; color: #004080; margin-bottom: 20px;")
+      | #{url}
+
+    // Expiry and security info
+    p(style="font-size: 14px; text-align: center; color: #333; margin-bottom: 20px;")
+      | For security reasons, this confirmation code will expire in 20 minutes. If you did not create an account on #{process.env.SITE_NAME}, please ignore this email.
+
+    // Support contact
+    p(style="font-size: 14px; text-align: center; color: #333; margin-bottom: 20px;")
+      | If you encounter any issues or need further assistance, please don't hesitate to contact us at  
+      a(href= `mailto:${process.env.EMAIL_ACCOUNT}`, style="color: #004080; text-decoration: none;")
+        | #{process.env.EMAIL_ACCOUNT}
+
+    // Footer
+    p(style="font-size: 12px; text-align: center; color: #888; margin-top: 40px;")
+      | © #{new Date().getFullYear()} #{process.env.SITE_NAME}. All rights reserved.

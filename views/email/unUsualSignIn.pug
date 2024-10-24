@@ -1,0 +1,39 @@
+extends baseEmail
+
+block content
+  // Logo and site name at the top
+  div(style="text-align: center; margin-bottom: 20px;")
+    img(src="https://i.ibb.co/NNbc0wp/logo-icon.png", alt= `${process.env.SITE_NAME} Logo`, style="height: 50px; border-radius: 50%; vertical-align: middle;")
+    span(style="font-family: sans-serif; font-size: 24px; font-weight: bold; vertical-align: middle; color: #333; margin-left: 10px;")
+      | #{process.env.SITE_NAME}
+
+  // Notification about unusual sign-in attempt
+  p(style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 0; margin-bottom: 15px; text-align: center;")
+    | We noticed an unusual login attempt on your #{process.env.SITE_NAME} account. For your security, we want to ensure it's really you trying to sign in.
+    br
+    | Please verify your identity by entering the following confirmation code:
+  
+  // Verification code section
+  p(style="font-family: sans-serif; font-size: 25px; font-weight: bold; text-align: center; color: #333; margin: 20px 0;")
+    | #{url}
+
+  // Additional instructions
+  p(style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 15px 0; text-align: center;")
+    | If this wasn't you, we recommend that you secure your account by changing your password and contacting our support team.
+
+  p(style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 15px 0; text-align: center;")
+    | For your protection, the code will expire in 20 minutes.
+
+  // Closing and contact information
+  p(style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 15px 0; text-align: center;")
+    | If you need any assistance, please reach out to us at
+
+  // Contact email
+  p(style="font-family: sans-serif; font-size: 14px; font-weight: normal; margin: 0; text-align: center;")
+    a(href= `mailto:${process.env.EMAIL_ACCOUNT}`, style="color: #ff3811; text-decoration: none;")
+      | #{process.env.EMAIL_ACCOUNT}
+
+  // Footer
+  p(style="font-family: sans-serif; font-size: 12px; font-weight: normal; margin: 20px 0; text-align: center; color: #aaa;")
+    | © #{new Date().getFullYear()} #{process.env.SITE_NAME}. All rights reserved.
+
