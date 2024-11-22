@@ -163,7 +163,14 @@ const changeUserName = async (req, res) => {
         errorMessage: "There is no user with this email",
       });
     }
-
+    const usernameExists = await User.findOne({ username: newUsername });
+    const isUsernameTaken = usernameExists? true : false;
+    if(isUsernameTaken){
+      return res.status(400).json({
+        success: true,
+        errorMessage: "There is already a user with this username",
+      });
+    }
     user.username = newUsername;
     await user.save();
     res.status(200).json({
