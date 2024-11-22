@@ -7,6 +7,9 @@
         "start": "node server.js",
         "start:dev": "nodemon server.js"
     },
+    "engines": {
+        "node": ">=20.0.0"
+    },
     "keywords": [],
     "author": "chukwujiobi victor ifeanyi",
     "license": "ISC",
@@ -23,14 +26,17 @@
         "geolib": "^3.3.4",
         "google-auth-library": "^9.2.0",
         "googleapis": "^128.0.0",
+        "html-to-text": "^9.0.5",
         "jsonwebtoken": "^8.5.1",
         "mongoose": "^6.1.8",
         "multer": "^1.4.4",
         "nodemailer": "^6.9.6",
-        "nodemon": "^2.0.15",
         "path": "^0.12.7",
         "pug": "^3.0.2",
         "sitemap": "^7.1.1",
         "slugify": "^1.6.5"
+    },
+    "devDependencies": {
+        "nodemon": "^3.1.7"
     }
 }
