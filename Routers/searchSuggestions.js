@@ -1,10 +1,8 @@
-// const express = require("express")
-// const router = express.Router() ;
+const express = require("express")
+const router = express.Router() ;
 
-// const { createIndex, searchSuggestion, moveAllData } = require('../Controllers/searchSuggestion')
+const { getTitleSuggestions } = require('../Controllers/searchSuggestion')
 
-// router.get('/searchSuggestion', searchSuggestion)
-// router.post('/createIndex', createIndex)
-// router.get('/moveAllData', moveAllData)
+router.get('/searchSuggestion', getTitleSuggestions);
 
-// module.exports = router
+module.exports = router

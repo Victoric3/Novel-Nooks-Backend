@@ -20,12 +20,20 @@ const StorySchema = new mongoose.Schema(
       type: [String],
       required: [true, "Please provide content"],
     },
+    contentTitles: {
+      type: [String],
+      default: []
+    },
+    contentCount: {
+      type: Number,
+      default: 0,
+    },
     tags: {
       type: [String],
       default: ["Multi-genre"],
       enum: [
         "Romance",
-        "shortStory", 
+        "shortStory",
         "sci-Fi",
         "Fantasy",
         "Horror",
@@ -37,12 +45,12 @@ const StorySchema = new mongoose.Schema(
         "Biography",
         "Science",
         "Self-Help",
-        "Personal-development"
+        "Personal-development",
       ],
     },
     summary: {
       type: String,
-      required: true
+      required: true,
     },
     image: {
       type: String,
@@ -97,20 +105,24 @@ const StorySchema = new mongoose.Schema(
     },
     free: {
       type: Boolean,
-      default: false
+      default: false,
     },
     prizePerChapter: {
       type: Number,
-      default: 5
-    }
+      default: 5,
+    },
   },
   { timestamps: true }
 );
 
-StorySchema.pre("save", function (next) {
+StorySchema.pre("save", async function (next) {
+  this.commentCount = await Comment.countDocuments({
+    story: this._id,
+  });
   if (!this.isModified("title")) {
     next();
   }
+  
 
   this.slug = this.makeSlug();
 

@@ -9,6 +9,7 @@ const {
   confirmEmailAndSignUp,
   resendVerificationToken,
   unUsualSignIn,
+  changeUserName
 } = require("../Controllers/auth");
 
 const { getAccessToRoute } = require("../Middlewares/Authorization/auth");
@@ -21,6 +22,8 @@ router.patch("/confirmEmailAndSignUp", confirmEmailAndSignUp);
 router.patch("/unUsualSignIn", unUsualSignIn);
 
 router.post("/login", login);
+
+router.patch("/changeUsername", getAccessToRoute, changeUserName);
 
 router.post("/forgotpassword", forgotpassword);
 

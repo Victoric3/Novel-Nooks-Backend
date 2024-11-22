@@ -3,7 +3,7 @@ extends baseEmail
 block content
   // Logo and site name at the top
   div(style="text-align: center; margin-bottom: 20px;")
-    img(src="https://i.ibb.co/NNbc0wp/logo-icon.png", alt= `${process.env.SITE_NAME} Logo`, style="height: 50px; border-radius: 50%; vertical-align: middle;")
+    img(src=`${process.env.APP_LOGO}`, alt= `${process.env.SITE_NAME} Logo`, style="height: 50px; border-radius: 50%; vertical-align: middle;")
     span(style="font-family: sans-serif; font-size: 24px; font-weight: bold; vertical-align: middle; color: #333; margin-left: 10px;")
       | #{process.env.SITE_NAME}
 

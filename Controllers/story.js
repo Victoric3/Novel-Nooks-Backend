@@ -10,12 +10,25 @@ const {
 
 const calculateReadTime = (chapter) => {
   const wordCount = chapter?.trim().split(/\s+/).length;
-  return Math.floor(wordCount / 200); // Assuming average reading speed of 200 words/min
+  return Math.floor(wordCount / 200);
 };
 
 const addStory = async (req, res, next) => {
-  const { title, content, summary, tags, prizePerChapter, free } = req.body;
-
+  let { title, content, summary, tags, prizePerChapter, free, contentTitles } =
+    req.body;
+  // console.log(
+  //   "hit route add story",
+  //   title,
+  //   content,
+  //   summary,
+  //   tags,
+  //   prizePerChapter,
+  //   free,
+  //   contentTitles
+  // );
+  content = JSON.parse(content);
+  tags = JSON.parse(tags);
+  contentTitles = JSON.parse(contentTitles);
   //only admins are allowed to create stories
   if (req.user.role !== "admin") {
     return res.status(401).json({
@@ -28,25 +41,26 @@ const addStory = async (req, res, next) => {
   if (!Array.isArray(content)) {
     return res.status(400).json({
       success: false,
-      message: "Content must be an array of chapters",
+      errorMessage: "Content must be an array of chapters",
     });
   }
 
   // Calculate readtime based on word count
   let readtime = content.map((chapter) => calculateReadTime(chapter));
-
+  // console.log("readtime: ", readtime);
+  // console.log("an image was attached: ", req.fileLink)
   try {
-    // Access req.fileLink, which was attached by the middleware
     const newStory = await Story.create({
       title,
       content,
       author: req.user._id,
       image: req.fileLink || "https://i.ibb.co/Jx8zhtr/story.jpg",
-      readtime,
+      readTime: readtime,
       tags,
       summary,
       prizePerChapter,
       free,
+      contentTitles: contentTitles.length > 0 ? contentTitles : [],
     });
 
     // Send a success response with the newStory data
@@ -83,246 +97,458 @@ const addImage = asyncErrorWrapper(async (req, res, next) => {
   }
 });
 
-const getAllStories = async (req, res, next) => {
+const getAllStories = async (req, res) => {
   try {
-    const { specific } = req.body; // true/false from the request body
+    const { specific } = req.body;
     const { slug } = req.params;
-    const searchQuery = req.query.search || ""; // Capture the search query from the request
-    const page = parseInt(req.query.page) || 1; // Get the current page
-    const pageSize = parseInt(req.query.limit) || 3; // Get the number of items per page
-    const skip = (page - 1) * pageSize; // Calculate the number of items to skip for pagination
+    const searchQuery = req.query.search || "";
+    const authorUsername = req.query.author; // New optional query parameter
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * pageSize;
+    const userId = req.user?._id;
+    console.log("searchQuery", searchQuery, "slug", slug);
 
-    // Build the base query
-    let query = [
+    const pipeline = [
+      // Stage 1: Add likeCount from array length and calculate rank points
+      {
+        $addFields: {
+          likeCount: {
+            $cond: {
+              if: { $isArray: "$likes" },
+              then: { $size: "$likes" },
+              else: 0,
+            },
+          },
+          contentCount: {
+            $cond: {
+              if: { $isArray: "$content" },
+              then: { $size: "$content" },
+              else: 0,
+            },
+          },
+        },
+      },
       {
         $addFields: {
           rankPoints: {
             $add: [
-              { $multiply: ["$commentCount", 2] }, // 2 points per comment
-              "$likeCount", // 1 point per like
+              { $multiply: ["$commentCount", 2] },
+              "$likeCount",
               {
                 $cond: [
-                  { $gte: ["$averageRating", 3] }, // Positive rating adjustment
-                  { $multiply: ["$averageRating", "$ratingCount", 10] }, // 10 points per rating
+                  { $gte: ["$averageRating", 3] },
+                  { $multiply: ["$averageRating", "$ratingCount", 10] },
                   {
                     $multiply: [
                       { $subtract: [3, "$averageRating"] },
                       "$ratingCount",
                       -10,
                     ],
-                  }, // Deduct points for below-average ratings
+                  },
                 ],
               },
             ],
           },
         },
       },
+
+      // Stage 2: Join with users collection
+      {
+        $lookup: {
+          from: "users",
+          let: { authorId: "$author" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$authorId"] } } },
+            { $project: { username: 1 } },
+          ],
+          as: "authorInfo",
+        },
+      },
+      { $unwind: "$authorInfo" },
+
+      // Stage 3: Add author username filter if provided
+      ...(authorUsername
+        ? [
+            {
+              $match: {
+                "authorInfo.username": authorUsername,
+              },
+            },
+          ]
+        : []),
+
+      // Stage 4: Add like status if user is authenticated
+      ...(userId
+        ? [
+            {
+              $addFields: {
+                likeStatus: {
+                  $in: [
+                    { $toObjectId: userId.toString() },
+                    {
+                      $map: {
+                        input: { $ifNull: ["$likes", []] },
+                        as: "like",
+                        in: { $toObjectId: "$$like" },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ]
+        : []),
+
+      // Add search query if provided
+      ...(searchQuery
+        ? [
+            {
+              $match: {
+                $or: [
+                  { title: { $regex: new RegExp(searchQuery, "i") } },
+                  { summary: { $regex: new RegExp(searchQuery, "i") } },
+                ],
+              },
+            },
+          ]
+        : []),
+
+      // Handle specific and tag filtering
+      ...(specific && slug === "recent" ? [{ $sort: { createdAt: -1 } }] : []),
+
+      ...(specific
+        ? [{ $match: { tags: slug } }, { $sort: { rankPoints: -1 } }]
+        : []),
+
+      ...(slug
+        ? [
+            {
+              $addFields: {
+                rankPoints: {
+                  $add: [
+                    "$rankPoints",
+                    {
+                      $multiply: [
+                        {
+                          $size: {
+                            $setIntersection: [
+                              "$tags",
+                              slug.split("+").filter(Boolean),
+                            ],
+                          },
+                        },
+                        1000,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            { $sort: { rankPoints: -1 } },
+          ]
+        : []),
+
+      // Default sort by rankPoints if not recent
+      { $sort: { rankPoints: -1 } },
+
+      // Add final stages for pagination
+      {
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [
+            { $skip: skip },
+            { $limit: pageSize },
+            {
+              $project: {
+                _id: 1,
+                title: 1,
+                slug: 1,
+                summary: 1,
+                tags: 1,
+                image: 1,
+                readTime: 1,
+                free: 1,
+                prizePerChapter: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                author: {
+                  _id: "$author",
+                  username: "$authorInfo.username",
+                },
+                likeCount: 1,
+                commentCount: 1,
+                averageRating: 1,
+                ratingCount: 1,
+                rankPoints: 1,
+                contentCount: 1,
+                likeStatus: { $ifNull: ["$likeStatus", false] },
+              },
+            },
+          ],
+        },
+      },
     ];
 
-    // Handle search functionality
-    if (searchQuery) {
-      query.push({
-        $match: {
-          title: { $regex: new RegExp(searchQuery, "i") }, // Case-insensitive search
+    // Execute aggregation
+    const [result] = await Story.aggregate(pipeline);
+    const { metadata, data } = result;
+    const totalCount = metadata[0]?.total || 0;
+    console.log("story result: ", result);
+
+    return res.status(200).json({
+      success: true,
+      count: data.length,
+      data: data,
+      page: page,
+      pages: Math.ceil(totalCount / pageSize),
+      total: totalCount,
+    });
+  } catch (error) {
+    console.error("Error in getAllStories:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+const detailStory = async (req, res) => {
+  const { slug } = req.params;
+  const { partial, chapter } = req.body;
+  console.log("called detail story");
+  console.log(`partial: ${partial}, chapter: ${chapter}`);
+
+  try {
+    // Fetch user data with only the necessary fields
+    const user = await User.findById(req.user._id, "free vouchers purchased");
+    if (!user)
+      return res
+        .status(404)
+        .json({ success: false, errorMessage: "User not found" });
+
+    // Fetch story data with selective projection
+    const story = await Story.findOne(
+      { slug },
+      "slug content contentTitles free prizePerChapter"
+    );
+    if (!story)
+      return res
+        .status(404)
+        .json({ success: false, errorMessage: "Story not found" });
+
+    // If partial is false and user lacks premium access, restrict access to non-free content
+    if (!partial && !story.free && user.free) {
+      return res.status(401).json({
+        errorMessage: "You need to purchase a premium plan to do this",
+      });
+    }
+
+    // Prepare filtered content based on the chapter array and partial flag
+    const filteredContent =
+      partial && Array.isArray(chapter)
+        ? chapter.map((idx) => story.content[idx]).filter(Boolean)
+        : story.content;
+
+    console.log(`filteredContent: ${filteredContent}`);
+
+    // If user is premium, grant full access
+    if (!user.free) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          content: filteredContent,
+          chapterTitle: story.contentTitles || [],
         },
       });
     }
 
-    // Handle specific tag filtering
-    if (specific && slug === "recent") {
+    // Non-premium: Verify chapter purchase or calculate voucher requirements
+    const purchasedChapters =
+      user.purchased.find((item) => item.slug === slug)?.chapter || [];
+    const unpaidChapters = chapter.filter(
+      (chap) => !purchasedChapters.includes(chap)
+    );
 
-      // Get the latest content if slug is 'recent'
-      query.push({ $sort: { createdAt: -1 } });
-    } else if (specific) {
-
-      // Match stories with the specific tag
-      query.push({ $match: { tags: slug } });
-    } else {
-
-      // If specific is false, add 1000 points for each matching tag
-      if (slug) {
-        const tagsArray = slug.split("+").filter((tag) => tag); // Split the slug into an array of tags, ensuring no empty strings
-        query.push({
-          $addFields: {
-            rankPoints: {
-              $add: [
-                "$rankPoints", // Existing rankPoints
-                {
-                  $multiply: [
-                    { $size: { $setIntersection: ["$tags", tagsArray] } },
-                    1000,
-                  ],
-                }, // Add 1000 for each matching tag
-                // Adjust the multiplier value as needed for ranking weight
-              ],
-            },
-          },
-        });
-      }
-    }
-    // Sort stories by rankPoints
-    query.push({ $sort: { rankPoints: -1 } });
-
-    // Apply pagination
-    query.push({ $skip: skip });
-    query.push({ $limit: pageSize });
-
-    // Execute the aggregation pipeline
-    const stories = await Story.aggregate(query);
-    console.log(query);
-
-    return res.status(200).json({
-      success: true,
-      count: stories.length,
-      data: stories,
-      page: page,
-      pages: Math.ceil(stories.length / pageSize),
-    });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-};
-
-const detailStory = asyncErrorWrapper(async (req, res) => {
-  const { slug } = req.params;
-  const { partial, chapter } = req.body;
-
-  const user = await User.findOne({ _id: req.user._id });
-  if (!user) {
-    return res.status(404).json({
-      success: false,
-      errorMessage: "user not found",
-    });
-  }
-
-  const story = await Story.findOne({ slug: slug }).populate("author likes");
-  if (!story) {
-    return res.status(404).json({
-      success: false,
-      errorMessage: "Story not found",
-    });
-  }
-
-  if (!partial && !story.free && user.free) {
-    return res.status(401).json({
-      errorMessage: "You need to purchase a premium plan to do this",
-    });
-  }
-
-  // Create a filtered content array if partial is true
-  let filteredContent = story.content; // Default to full content
-  if (partial && Array.isArray(chapter)) {
-    filteredContent = chapter
-      .map((index) => index <= story.content.length - 1 && story.content[index])
-      .filter((content) => content !== undefined);
-  }
-
-  // Check if user has free access
-  if (!user.free) {
-    return res.status(200).json({
-      success: true,
-      data: {
-        ...story.toObject(),
-        content: filteredContent,
-      },
-    });
-  } else {
-    // Check if the user has already purchased the chapters
-    const purchasedItem = user.purchased.find((item) => item.slug === slug);
-    let chaptersToPurchase = chapter; // Chapters user is trying to purchase
-
-    if (purchasedItem) {
-      // Filter out chapters the user already purchased
-      chaptersToPurchase = chapter.filter(
-        (chap) => !purchasedItem.chapter.includes(chap)
-      );
-    }
-
-    // If all requested chapters have been purchased, no need to charge
-    if (chaptersToPurchase.length === 0) {
+    if (unpaidChapters.length === 0) {
       return res.status(200).json({
         success: true,
         data: {
-          ...story.toObject(),
           content: filteredContent,
+          chapterTitle: story.contentTitles || [],
         },
         message: "You already have access to these chapters",
       });
     }
 
-    // Check if user has enough vouchers for the chapters they haven't purchased
-    const billing = story.prizePerChapter * chaptersToPurchase.length;
-    if (user.vouchers >= billing) {
-      // Deduct vouchers and update the purchased chapters
-      user.vouchers -= billing;
+    // Check if user has enough vouchers for unpaid chapters
+    const billingAmount = story.prizePerChapter * unpaidChapters.length;
+    if (user.vouchers < billingAmount) {
+      return res.status(401).json({
+        errorType: "insufficient vouchers",
+        errorMessage:
+          "Insufficient vouchers! Please top up your coins to purchase more vouchers or consider upgrading to premium for unlimited access.",
+      });
+    }
 
-      if (purchasedItem) {
-        // If the slug exists, add the new chapters to the existing array
-        console.log("chaptersToPurchase: ", ...chaptersToPurchase);
-        purchasedItem.chapter.push(...chaptersToPurchase);
-        user.markModified("purchased");
-      } else {
-        // If the slug doesn't exist, add a new entry in purchased
-        user.purchased.push({
-          slug,
-          chapter: chaptersToPurchase, // Store new chapters in an array
+    // Deduct vouchers and update purchased chapters
+    user.vouchers -= billingAmount;
+    if (purchasedChapters.length) {
+      purchasedChapters.push(...unpaidChapters);
+      user.markModified("purchased");
+    } else {
+      user.purchased.push({ slug, chapter: unpaidChapters });
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        content: filteredContent,
+        chapterTitle: story.contentTitles || [],
+      },
+      message: "Chapters successfully purchased",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ errorMessage: `Internal server error: ${error}` });
+  }
+};
+
+const likeStory = async (req, res) => {
+  const { slug } = req.params;
+  const userId = req.user._id;
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
+
+  async function attemptUpdate() {
+    try {
+      // Use lean() for faster query since we don't need the full document
+      const [user, story] = await Promise.all([
+        User.findById(userId).select("likes").lean(),
+        Story.findOne({ slug }).select("likes likeCount author __v").lean(),
+      ]);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          errorMessage: "User not found",
         });
       }
 
-      await user.save();
+      if (!story) {
+        return res.status(404).json({
+          success: false,
+          errorMessage: "Story not found",
+        });
+      }
+
+      // Check if user has already liked the story
+      const hasLiked = user.likes?.some(
+        (likedStoryId) => likedStoryId.toString() === story._id.toString()
+      );
+
+      // Use findOneAndUpdate with version key check
+      const updatedStory = await Story.findOneAndUpdate(
+        {
+          _id: story._id,
+          __v: story.__v, // Version check
+        },
+        [
+          {
+            $set: {
+              likes: {
+                $cond: {
+                  if: { $eq: [hasLiked, true] },
+                  then: {
+                    $filter: {
+                      input: "$likes",
+                      cond: { $ne: ["$$this", userId] },
+                    },
+                  },
+                  else: {
+                    // Ensure we don't add duplicate likes
+                    $cond: {
+                      if: { $in: [userId, "$likes"] },
+                      then: "$likes",
+                      else: { $concatArrays: ["$likes", [userId]] },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            $set: {
+              likeCount: { $size: "$likes" },
+              __v: { $add: ["$__v", 1] }, // Increment version
+            },
+          },
+        ],
+        {
+          new: true,
+          runValidators: true,
+        }
+      )
+        .select("likes likeCount")
+        .lean();
+
+      if (!updatedStory && retryCount < MAX_RETRIES) {
+        retryCount++;
+        return await attemptUpdate();
+      }
+
+      if (!updatedStory) {
+        return res.status(409).json({
+          success: false,
+          errorMessage: "Concurrent update detected. Please try again.",
+        });
+      }
+
+      // Update user's likes array
+      await User.findOneAndUpdate(
+        { _id: userId },
+        hasLiked
+          ? { $pull: { likes: story._id } }
+          : {
+              $addToSet: { likes: story._id }, // Use addToSet to prevent duplicates
+            }
+      );
+
+      console.log(
+        "data",
+        updatedStory,
+        `likeStatus: ${hasLiked ? false : true}`
+      );
+
       return res.status(200).json({
         success: true,
-        data: {
-          ...story.toObject(),
-          content: filteredContent,
-        },
-        message: "Chapters successfully purchased",
+        data: updatedStory,
+        likeStatus: hasLiked ? false : true,
       });
-    } else {
-      return res.status(400).json({
-        message: "You do not have enough vouchers to read these chapters",
+    } catch (error) {
+      if (error.name === "VersionError" && retryCount < MAX_RETRIES) {
+        retryCount++;
+        return await attemptUpdate();
+      }
+
+      console.error("Error in likeStory:", error);
+      return res.status(500).json({
+        success: false,
+        errorMessage: "Internal server error",
       });
     }
   }
-});
 
-const likeStory = asyncErrorWrapper(async (req, res, next) => {
-  const { slug } = req.params;
-  const activeUser = await User.findOne({ _id: req.user._id });
-  if (!activeUser) {
-    res.status(404).json({
-      errorMessage: "user not found",
-    });
-  }
-
-  const story = await Story.findOne({
-    slug: slug,
-  }).populate("author likes");
-
-  const storyLikeUserIds = story.likes.map((json) => json._id.toString());
-
-  if (!storyLikeUserIds.includes(activeUser._id)) {
-    story.likes.push(req.user);
-    story.likeCount = story.likes.length;
-    await story.save();
-  } else {
-    const index = storyLikeUserIds.indexOf(activeUser._id);
-    story.likes.splice(index, 1);
-    story.likeCount = story.likes.length;
-
-    await story.save();
-  }
-
-  return res.status(200).json({
-    success: true,
-    data: story,
-  });
-});
+  return attemptUpdate();
+};
 
 const rateStory = asyncErrorWrapper(async (req, res, next) => {
-  const { rating } = req.body; // Assuming the rating is passed in the request body
+  const { rating } = req.body;
   const { slug } = req.params;
+  console.log("rating: ", rating);
   const activeUser = await User.findOne({ _id: req.user._id });
   if (!activeUser) {
     res.status(404).json({
@@ -338,9 +564,9 @@ const rateStory = asyncErrorWrapper(async (req, res, next) => {
     });
   }
 
-  const story = await Story.findOne({ slug: slug }).populate(
-    "author ratings.user"
-  );
+  const story = await Story.findOne({ slug: slug })
+    .populate("author ratings.user")
+    .select("-content -readTime -likes -comments -authorInfo");
 
   if (!story) {
     return res.status(404).json({
@@ -391,7 +617,10 @@ const editStoryPage = asyncErrorWrapper(async (req, res, next) => {
 
 const editStory = asyncErrorWrapper(async (req, res) => {
   const { slug } = req.params;
-  const { title, content, partial, chapter, tags, summary } = req.body;
+  let { title, content, partial, chapter, tags, summary } = req.body;
+  // console.log(title, content, partial, chapter, tags, summary)
+  content = JSON.parse(content);
+  chapter = chapter ? JSON.parse(chapter) : chapter;
   if (req.user.role !== "admin") {
     res.status(401).json({
       errorMessage: "you are not allowed to do this",
@@ -407,7 +636,7 @@ const editStory = asyncErrorWrapper(async (req, res) => {
   }
   const previousImage = story.image;
   story.title = title || story.title;
-  story.tags = tags || story.tags;
+  story.tags = tags ? JSON.parse(tags) : story.tags;
   story.summary = summary || story.summary;
   story.image = req.fileLink;
 
@@ -419,7 +648,7 @@ const editStory = asyncErrorWrapper(async (req, res) => {
   }
 
   // Update content based on whether it is partial or full
-  if (partial && Array.isArray(chapter) && content) {
+  if (partial == true && Array.isArray(chapter) && content) {
     // Update specific chapters
     chapter.forEach((index, i) => {
       if (index >= 0 && index < story.content.length) {
@@ -431,11 +660,16 @@ const editStory = asyncErrorWrapper(async (req, res) => {
       }
     });
 
-    // story.markModified("content");
-  } else if (content && !partial) {
+    story.markModified("content");
+  } else {
     // If not partial, overwrite the entire content
-    story.content = content;
+    story.content = [...content];
+    story.contentCount = content.length;
+    console.log("story.content: ", story.content);
+    story.markModified("content");
   }
+
+  console.log("content", content, "partial: ", partial);
 
   await story.save();
 

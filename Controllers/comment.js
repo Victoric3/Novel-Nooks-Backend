@@ -1,17 +1,17 @@
-const asyncErrorWrapper = require("express-async-handler")
+const asyncErrorWrapper = require("express-async-handler");
 const Story = require("../Models/story");
 const Comment = require("../Models/comment");
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const addNewCommentToStory  =asyncErrorWrapper(async(req,res,next)=> {
+const addNewCommentToStory = asyncErrorWrapper(async (req, res, next) => {
+  const { slug } = req.params;
 
-    const {slug} = req.params 
+  const { content, parentCommentId, taggedReply } = req.body;
+  console.log("parentCommentId: ", parentCommentId)
 
-    const {star , content, parentCommentId} =req.body 
+  const story = await Story.findOne({ slug: slug });
 
-    const story = await Story.findOne({slug :slug })
-
-    const parentComment = parentCommentId
+  const parentComment = parentCommentId
     ? await Comment.findById(parentCommentId)
     : null;
 
@@ -21,10 +21,10 @@ const addNewCommentToStory  =asyncErrorWrapper(async(req,res,next)=> {
     author: {
       _id: req.user.id,
       username: req.user.username,
-      photo: req.user.photo
+      photo: req.user.photo,
     },
-    star: star,
-    parentComment: parentComment, // Assign the parent comment
+    parentComment: parentComment,
+    taggedReply,
   });
 
   if (parentComment) {
@@ -37,139 +37,148 @@ const addNewCommentToStory  =asyncErrorWrapper(async(req,res,next)=> {
     await story.save();
   }
 
-    return res.status(200).json({
-        success :true, 
-        data : comment 
-    })
-
-})
+  return res.status(200).json({
+    success: true,
+    data: comment,
+    story: story,
+  });
+});
 
 const getRepliesForComment = async (req, res) => {
-    try {
-      const page = parseInt(req.query.page) || 1;
-      const pageSize = 15;
-      const { commentId } = req.params
-      // Find the comment by its ID
-      const parentComment = await Comment.findById(commentId)
-
-      if (!parentComment) {
-        // Handle the case where the parent comment is not found
-        return res.status(404).json({message: `Parent comment with ID ${commentId} not found.`});
-      }
-      const maxPages = parentComment.replies.length/pageSize
-      if(page - 1 > maxPages){
-        return res.status(404).json({success: false, errorMessage: 'max pages exceeded'})
-      }
-  
-      // Fetch the replies using the IDs stored in the parent comment's 'replies' array
-      const replyIds = parentComment.replies || [];
-      const replies = await Comment.find({ _id: { $in: replyIds } })
-      .sort({createdAt: -1, _id: 1})
-      .skip((page - 1) * pageSize)
-      .limit(pageSize);
-      if(replies.length > 0){
-          res.status(200).json({replies});
-      }else{
-        res.status(201).json({})
-      }
-    } catch (error) {
-      console.error('Error fetching replies:', error);
-      throw error; // Propagate the error to the calling function
-    }
-  };
-
-const getAllCommentByStory = asyncErrorWrapper(async(req, res, next) => {
-
-    const { slug } = req.params
+  try {
     const page = parseInt(req.query.page) || 1;
     const pageSize = 15;
-    
-    const story = await Story.findOne({slug:slug})
-    if(!story){
-      res.status(404).json({
-        success: 'false',
-        errorMessage: 'story not found'
-      })
+    const { commentId } = req.params;
+    // Find the comment by its ID
+    const parentComment = await Comment.findById(commentId);
+
+    if (!parentComment) {
+      // Handle the case where the parent comment is not found
+      return res
+        .status(404)
+        .json({ message: `Parent comment with ID ${commentId} not found.` });
     }
-    const maxPages = story.comments.length/pageSize
-    if(page - 1 > maxPages){
-      return res.status(404).json({success: false, errorMessage: 'max pages exceeded'})
+    const maxPages = parentComment.replies.length / pageSize;
+    if (page - 1 > maxPages) {
+      return res
+        .status(404)
+        .json({ success: false, errorMessage: "max pages exceeded" });
     }
-    const commmentList = await Comment.find({
-       story: story._id,
-       parentComment: null 
-    }).sort({createdAt: -1, _id: 1})
+
+    // Fetch the replies using the IDs stored in the parent comment's 'replies' array
+    const replyIds = parentComment.replies || [];
+    const replies = await Comment.find({ _id: { $in: replyIds } })
+      .sort({ createdAt: -1, _id: 1 })
       .skip((page - 1) * pageSize)
       .limit(pageSize);
+    if (replies.length > 0) {
+      res.status(200).json({ replies });
+    } else {
+      res.status(201).json({});
+    }
+  } catch (error) {
+    console.error("Error fetching replies:", error);
+    throw error; // Propagate the error to the calling function
+  }
+};
 
-    const totalCommentCount = await Comment.countDocuments({
-      story: story._id
+const getAllCommentByStory = asyncErrorWrapper(async (req, res, next) => {
+  console.log("hit getAllCommentByStory route");
+  const { slug } = req.params;
+  const page = parseInt(req.query.page) || 1;
+  const pageSize = 10;
+
+  const story = await Story.findOne({ slug: slug });
+  if (!story) {
+    res.status(404).json({
+      success: "false",
+      errorMessage: "story not found",
+    });
+  }
+  const maxPages = Math.ceil(story.comments.length / pageSize);
+  if (page - 1 > maxPages) {
+    return res
+      .status(404)
+      .json({ success: false, errorMessage: "max pages exceeded" });
+  }
+  const commentList = await Comment.find({
+    story: story._id,
+    parentComment: null,
+  })
+    .populate("replies author")
+    .populate({
+      path: "replies",
+      populate: {
+        path: "parentComment",
+        select: "_id",
+        populate: {
+          path: "author",
+          select: "username",
+        },
+      },
+    })
+    .sort({ createdAt: -1, _id: 1 })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .lean();
+
+  const totalCommentCount = await Comment.countDocuments({
+    story: story._id,
   });
 
-    return res.status(200)
-        .json({
-            success: true,
-            count: totalCommentCount,
-            data: commmentList
-        })
+  return res.status(200).json({
+    success: true,
+    count: totalCommentCount,
+    page,
+    maxPages,
+    data: commentList,
+  });
+});
 
-})
+const commentLike = asyncErrorWrapper(async (req, res, next) => {
+  const { activeUser } = req.body;
+  const { comment_id } = req.params;
 
-const commentLike = asyncErrorWrapper(async(req, res, next) => {
+  const comment = await Comment.findById(comment_id);
 
-    const { activeUser} =  req.body 
-    const { comment_id} =  req.params 
+  if (!comment.likes.includes(activeUser._id)) {
+    comment.likes.push(activeUser._id);
+    comment.likeCount = comment.likes.length;
 
+    await comment.save();
+  } else {
+    const index = comment.likes.indexOf(activeUser._id);
+    comment.likes.splice(index, 1);
+    comment.likeCount = comment.likes.length;
+    await comment.save();
+  }
 
-    const comment = await Comment.findById(comment_id)
+  const likeStatus = comment.likes.includes(activeUser._id);
 
-    if (!comment.likes.includes(activeUser._id)) {
+  return res.status(200).json({
+    success: true,
+    data: comment,
+    likeStatus: likeStatus,
+  });
+});
 
-        comment.likes.push(activeUser._id)
-        comment.likeCount = comment.likes.length ;
+const getCommentLikeStatus = asyncErrorWrapper(async (req, res, next) => {
+  const { activeUser } = req.body;
+  const { comment_id } = req.params;
 
-        await comment.save()  ;
+  const comment = await Comment.findById(comment_id);
+  const likeStatus = comment.likes.includes(activeUser._id);
 
-    }
-    else {
+  return res.status(200).json({
+    success: true,
+    likeStatus: likeStatus,
+  });
+});
 
-        const index = comment.likes.indexOf(activeUser._id)
-        comment.likes.splice(index, 1)
-        comment.likeCount = comment.likes.length
-        await comment.save()  ;
-    }
-
-    const likeStatus = comment.likes.includes(activeUser._id)
-    
-    return res.status(200)
-        .json({
-            success: true,
-            data : comment,
-            likeStatus:likeStatus
-        })
-
-})
-
-const getCommentLikeStatus = asyncErrorWrapper(async(req, res, next) => {
-
-    const { activeUser} =  req.body 
-    const { comment_id} =  req.params 
-
-    const comment = await Comment.findById(comment_id)
-    const likeStatus = comment.likes.includes(activeUser._id)
-
-    return res.status(200)
-    .json({
-        success: true,
-        likeStatus:likeStatus
-    })
-
-})
-
-module.exports ={
-    addNewCommentToStory,
-    getAllCommentByStory,
-    commentLike,
-    getCommentLikeStatus,
-    getRepliesForComment
-}
+module.exports = {
+  addNewCommentToStory,
+  getAllCommentByStory,
+  commentLike,
+  getCommentLikeStatus,
+  getRepliesForComment,
+};

@@ -8,8 +8,12 @@ const scheduleCallRoute = require("./scheduleCall");
 const premiumRoute = require("./premium");
 const commentRoute = require("./comment");
 const sitemapRoute = require("./sitemapRouter");
+const searchSuggestionsRoute = require("./searchSuggestions");
+const notification = require("./notification")
 
+router.use("/notification", notification);
 router.use("/story", storyRoute);
+router.use("/search", searchSuggestionsRoute);
 router.use("/user", userRoute);
 router.use("/call", scheduleCallRoute);
 router.use("/premium", premiumRoute);

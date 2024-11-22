@@ -8,14 +8,13 @@ const {
   checkUserInfoChange,
   addUserInfo,
 } = require("../Helpers/auth/deviceChange");
+const { createNotification } = require("./notification");
 const {
   generateUniqueUsername,
 } = require("../Helpers/auth/generateUniqueUsername");
 const crypto = require("crypto");
-const { updateVouchersCore } = require("./premiumRestrictions");
 
 const getPrivateData = asyncErrorWrapper((req, res, next) => {
-  console.log("userData: ", req.user)
   return res.status(200).json({
     success: true,
     message: "You got access to the private data in this route",
@@ -35,7 +34,6 @@ const register = async (req, res) => {
     birthdate,
   } = req.body;
   try {
-    console.log(birthdate, interests, firstname, lastname);
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
@@ -49,8 +47,8 @@ const register = async (req, res) => {
     user.birthdate = birthdate;
     user.username = await generateUniqueUsername(user);
     user.temporary = false;
+    user.vouchers = 150;
 
-    await updateVouchersCore(user, process.env.ADMIN_PASS, 30, true);
     // Save the updated user information
     await user.save();
     if (checkUserInfoChange(user, { location, deviceInfo, ipAddress })) {
@@ -62,6 +60,7 @@ const register = async (req, res) => {
         errorMessage: "Unusual sign-in detected. An email has been sent",
       });
     }
+
     sendToken(user, 200, res, "registration successful");
   } catch (e) {
     res.status(500).json({
@@ -73,8 +72,8 @@ const register = async (req, res) => {
 };
 
 const login = async (req, res, next) => {
-  const { identity, password, location, ipAddress, deviceInfo } = req.body;
   console.log("tried logging in");
+  const { identity, password, location, ipAddress, deviceInfo } = req.body;
   console.log(identity, password, location, ipAddress, deviceInfo);
   try {
     if (!identity && !password) {
@@ -139,9 +138,41 @@ const login = async (req, res, next) => {
         errorMessage: "finish signing Up",
       });
     }
+    await createNotification(
+      user._id,
+      "NEW_LOGIN",
+      "New Login Detected",
+      `A new login to your account was detected from a device: ${deviceInfo.deviceType} running ${deviceInfo.os}. If this was you, no further action is required. If you did not authorize this login, please secure your account immediately to protect your information.`,
+      { identity }
+    );
+
     sendToken(user, 200, res, "successful");
   } catch (error) {
     console.log(error);
+  }
+};
+
+const changeUserName = async (req, res) => {
+  const { newUsername } = req.body;
+  let user = req.user;
+  try {
+    user = await User.findOne({ _id: req.user._id });
+    if (!user) {
+      return res.status(400).json({
+        success: true,
+        errorMessage: "There is no user with this email",
+      });
+    }
+
+    user.username = newUsername;
+    await user.save();
+    res.status(200).json({
+      message: "username updated successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      errorMessage: "internal server error",
+    });
   }
 };
 
@@ -176,9 +207,9 @@ const forgotpassword = asyncErrorWrapper(async (req, res, next) => {
   }
 });
 
-const resetpassword = asyncErrorWrapper(async (req, res, next) => {
+const resetpassword = async (req, res) => {
   const { resetPasswordToken, newPassword } = req.body;
-
+  console.log(resetPasswordToken, newPassword);
   try {
     if (!resetPasswordToken) {
       res.status(400).json({
@@ -204,7 +235,7 @@ const resetpassword = asyncErrorWrapper(async (req, res, next) => {
     }
     if (comparePassword(newPassword, user.password)) {
       return res.status(400).json({
-        message:
+        errorMessage:
           "please add a password you have never used with this account before",
       });
     }
@@ -214,9 +245,10 @@ const resetpassword = asyncErrorWrapper(async (req, res, next) => {
     user.verificationTokenExpires = undefined;
 
     await user.save();
+    console.log("actually completed: ", user);
 
     return res.status(200).json({
-      success: "success",
+      success: true,
       message: "Reset Password successfull",
     });
   } catch (err) {
@@ -226,7 +258,7 @@ const resetpassword = asyncErrorWrapper(async (req, res, next) => {
       errorMessage: `internal server error`,
     });
   }
-});
+};
 
 const confirmEmailAndSignUp = catchAsync(async (req, res, next) => {
   const { token } = req.body;
@@ -267,7 +299,6 @@ const confirmEmailAndSignUp = catchAsync(async (req, res, next) => {
 
 const unUsualSignIn = catchAsync(async (req, res, next) => {
   const { token, location, deviceInfo, ipAddress } = req.body;
-  console.log("called");
   //1  get user based on token
   const hashedToken = crypto.createHash("shake256").update(token).digest("hex");
   const user = await User.findOne({
@@ -288,13 +319,10 @@ const unUsualSignIn = catchAsync(async (req, res, next) => {
   user.verificationTokenExpires = undefined;
   await user.save();
   sendToken(user, 200, res, "verification successful");
-
-  res.status(200).json({
-    message: `Your email has been confirmed`,
-  });
   return;
 });
 
+//TODO: correct security breech caused by alloowing sign in without password
 const resendVerificationToken = catchAsync(async (req, res, next) => {
   const { email } = req.body;
 
@@ -327,4 +355,5 @@ module.exports = {
   confirmEmailAndSignUp,
   resendVerificationToken,
   unUsualSignIn,
+  changeUserName,
 };

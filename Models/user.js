@@ -67,6 +67,12 @@ const UserSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    likes: [
+      {
+        type: mongoose.Schema.ObjectId,
+        ref: "Story",
+      },
+    ],
     preferences: {
       type: [Object],
       default: [],
@@ -88,6 +94,10 @@ const UserSchema = new mongoose.Schema(
         default: 0
     },
     vouchers: {
+        type: Number,
+        default: 0
+    },
+    coins: {
         type: Number,
         default: 0
     },

@@ -51,6 +51,6 @@ router.delete(
   deleteStory
 );
 
-router.get("/getAllStories/:slug", getAllStories);
+router.get("/getAllStories/:slug", getAccessToRoute, getAllStories);
 
 module.exports = router;
