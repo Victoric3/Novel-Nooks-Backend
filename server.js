@@ -26,10 +26,7 @@ rateLimit({
       return req.user
     },
   });
-  app.use(cors({
-    origin: ['https://novelnooks.netlify.app'],
-    credentials: true,
-  }));
+  app.use(cors());
 
 app.get('/', (req, res) => {
     res.send('server successfully running');
