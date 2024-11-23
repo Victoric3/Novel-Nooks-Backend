@@ -1,9 +1,21 @@
 const isTokenIncluded = (req) => {
-  return req.cookies && req.cookies.token;
+  return (
+    (req.cookies && req.cookies.token) || 
+    (req.headers.authorization?.startsWith('Bearer '))
+  );
 };
 
 const getAccessTokenFromCookies = (req) => {
-  const token = req.cookies.token;
+  // Check cookie first
+  const cookieToken = req.cookies?.token;
+  
+  // Check Authorization header if no cookie token
+  const bearerToken = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.split(' ')[1]
+    : null;
+
+  // Use whichever token is available
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     throw new Error("Authentication token is missing");
@@ -28,7 +40,8 @@ const sendToken = (user, statusCode, res, message) => {
   return res.status(statusCode).cookie("token", token, cookieOptions).json({
     status: "success",
     message,
-    role: user.role
+    role: user.role,
+    token
   });
 };
 

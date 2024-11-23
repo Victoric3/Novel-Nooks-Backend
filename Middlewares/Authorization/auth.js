@@ -14,7 +14,7 @@ const getAccessToRoute = async (req, res, next) => {
     const { JWT_SECRET_KEY } = process.env;
 
     if (!isTokenIncluded(req)) {
-      console.log(req.cookies)
+      console.log(req.cookies);
       return next(new CustomError("No token added ", 400));
     }
 
@@ -30,11 +30,11 @@ const getAccessToRoute = async (req, res, next) => {
     }
 
     req.user = user;
+    next();
   } catch (error) {
     console.log(error);
     return next(new CustomError("internal server error", 500));
   }
-  next();
 };
 
 const apiLimiter = rateLimit({
