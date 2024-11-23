@@ -22,6 +22,8 @@ const sendToken = (user, statusCode, res, message) => {
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
+    sameSite: "None",
+    domain: ".netlify.app"
   };
   // Send the response
   return res.status(statusCode).cookie("token", token, cookieOptions).json({
