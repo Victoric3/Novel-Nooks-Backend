@@ -34,14 +34,13 @@ const sendToken = (user, statusCode, res, message) => {
     ),
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "None",
   };
   // Send the response
   return res.status(statusCode).cookie("token", token, cookieOptions).json({
     status: "success",
     message,
     role: user.role,
-    token
+    token: token
   });
 };
 
