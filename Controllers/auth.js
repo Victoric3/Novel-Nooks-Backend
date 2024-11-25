@@ -14,13 +14,21 @@ const {
 } = require("../Helpers/auth/generateUniqueUsername");
 const crypto = require("crypto");
 
-const getPrivateData = asyncErrorWrapper((req, res, next) => {
-  return res.status(200).json({
-    success: true,
-    message: "You got access to the private data in this route",
-    user: req.user,
-  });
-});
+const getPrivateData = (req, res, next) => {
+  try {
+    return res.status(200).json({
+      success: true,
+      message: "You got access to the private data in this route",
+      user: req.user,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      success: false,
+      message: "Error You are not authorized to access this route",
+    });
+  }
+};
 
 const register = async (req, res) => {
   const {
@@ -32,66 +40,136 @@ const register = async (req, res) => {
     ipAddress,
     deviceInfo,
     birthdate,
+    anonymousId,
   } = req.body;
+
   try {
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({
-        status: "not found",
-        message: "user doesn't exist",
-      });
-    }
-    user.firstname = firstname;
-    user.lastname = lastname;
-    user.interests = interests;
-    user.birthdate = birthdate;
-    user.username = await generateUniqueUsername(user);
-    user.temporary = false;
-    user.vouchers = 150;
+    // Try to find existing anonymous user or user with this email
+    const [anonymousUser, existingUser] = await Promise.all([
+      anonymousId ? User.findOne({ anonymousId, isAnonymous: true }) : null,
+      User.findOne({ email, isAnonymous: false }),
+    ]);
 
-    // Save the updated user information
-    await user.save();
-    if (checkUserInfoChange(user, { location, deviceInfo, ipAddress })) {
-      const verificationToken = user.createToken();
-      await user.save();
-      new Email(user, verificationToken).sendUnUsualSignIn();
-      return res.status(401).json({
-        status: "unauthorized",
-        errorMessage: "Unusual sign-in detected. An email has been sent",
-      });
+    const userData = {
+      firstname,
+      lastname,
+      interests,
+      email,
+      birthdate,
+      location: [location],
+      ipAddress: [ipAddress],
+      deviceInfo: [deviceInfo],
+      temporary: false,
+      isAnonymous: false,
+      accountType: "registered",
+      vouchers: 150,
+    };
+
+    if (existingUser) {
+      // Update existing user
+      Object.assign(existingUser, userData);
+
+      if (
+        checkUserInfoChange(existingUser, { location, deviceInfo, ipAddress })
+      ) {
+        const verificationToken = existingUser.createToken();
+        await Promise.all([
+          existingUser.save(),
+          new Email(existingUser, verificationToken).sendUnUsualSignIn(),
+        ]);
+        return res.status(401).json({
+          status: "unauthorized",
+          errorMessage: "Unusual sign-in detected. An email has been sent",
+        });
+      }
+
+      await existingUser.save();
+      return sendToken(
+        existingUser,
+        200,
+        res,
+        "user information updated successfully"
+      );
     }
 
-    sendToken(user, 200, res, "registration successful");
-  } catch (e) {
-    res.status(500).json({
+    if (anonymousUser) {
+      // Convert anonymous user
+      Object.assign(anonymousUser, userData);
+      anonymousUser.username = await generateUniqueUsername(anonymousUser);
+
+      if (
+        checkUserInfoChange(anonymousUser, { location, deviceInfo, ipAddress })
+      ) {
+        const verificationToken = anonymousUser.createToken();
+        await Promise.all([
+          anonymousUser.save(),
+          new Email(anonymousUser, verificationToken).sendUnUsualSignIn(),
+        ]);
+        return res.status(401).json({
+          status: "unauthorized",
+          errorMessage: "Unusual sign-in detected. An email has been sent",
+        });
+      }
+
+      await anonymousUser.save();
+      return sendToken(anonymousUser, 200, res, "registration successful");
+    }
+
+    // Create new user
+    const newUser = new User(userData);
+    newUser.username = await generateUniqueUsername(newUser);
+    const verificationToken = newUser.createToken();
+
+    await Promise.all([
+      newUser.save(),
+      new Email(newUser, verificationToken).sendConfirmEmail(),
+    ]);
+
+    return sendToken(newUser, 200, res, "registration successful");
+  } catch (error) {
+    console.error("Registration error:", error);
+    return res.status(500).json({
       status: "failed",
       errorMessage: "internal server error",
     });
-    console.log(e);
   }
 };
 
-const login = async (req, res, next) => {
-  console.log("tried logging in");
-  const { identity, password, location, ipAddress, deviceInfo } = req.body;
-  console.log(identity, password, location, ipAddress, deviceInfo);
+const login = async (req, res) => {
   try {
-    if (!identity && !password) {
-      res.status(400).json({
+    const { identity, password, location, ipAddress, deviceInfo, isAnonymous } =
+      req.body;
+    console.log(location, ipAddress, deviceInfo);
+    // Early validation checks
+    if (isAnonymous) {
+      return res.status(401).json({
+        status: "anonymous",
+        errorMessage: "Sign up to unlock full access!",
+      });
+    }
+
+    if (!identity || !password) {
+      return res.status(400).json({
         status: "failed",
         errorMessage: "invalid email or password",
       });
-      return;
     }
-    //2 if email and password belongs to a user
-    const user = await User.findOne({ email: identity }).select("+password");
 
+    // Single database query with required fields
+    const user = await User.findOne({
+      email: identity,
+    }).select(
+      "+password emailStatus temporary location ipAddress deviceInfo role email firstname"
+    );
+
+    // Handle non-existent user case
     if (!user) {
-      const newUser = await User.create({
+      console.log("trying to create new user");
+      // Create new user asynchronously
+      const newUserPromise = await User.create({
         firstname: "firstname",
         lastname: "lastname",
         birthdate: "birthdate",
-        interests: ["interests"],
         temporary: true,
         username: "username",
         email: identity,
@@ -102,53 +180,92 @@ const login = async (req, res, next) => {
         ipAddress: [ipAddress],
         deviceInfo: [deviceInfo],
       });
-      const verificationToken = newUser.createToken();
-      await newUser.save();
-      new Email(newUser, verificationToken).sendConfirmEmail();
+
+      const verificationToken = newUserPromise.createToken();
+
+      // Perform save and email operations in parallel
+      await Promise.all([
+        newUserPromise.save(),
+        new Email(newUserPromise, verificationToken).sendConfirmEmail(),
+      ]);
+
       return res.status(404).json({
         status: "not found",
         errorMessage:
           "Please check your email to complete your account creation.",
       });
-    } else if (!comparePassword(password, user.password)) {
+    }
+
+    // Password check
+    if (!comparePassword(password, user.password)) {
       return res.status(400).json({
         status: "failed",
         errorMessage: "your email or password is incorrect",
       });
-    } else if (user.emailStatus == "pending") {
+    }
+
+    // Status checks using early returns
+    if (user.emailStatus === "pending") {
       const verificationToken = user.createToken();
-      await user.save();
-      new Email(user, verificationToken).sendConfirmEmail();
+      console.log("trying to send verification token", user);
+      // Parallel operations
+      await Promise.all([
+        user.save(),
+        new Email(user, verificationToken).sendConfirmEmail(),
+      ]);
+
       return res.status(401).json({
         status: "unverified email",
         errorMessage:
           "you have not verified your email, an email has been sent to you",
       });
-    } else if (checkUserInfoChange(user, { location, deviceInfo, ipAddress })) {
-      const verificationToken = user.createToken();
-      await user.save();
-      new Email(user, verificationToken).sendUnUsualSignIn();
-      return res.status(401).json({
-        status: "unauthorized",
-        errorMessage: "Unusual sign-in detected. An email has been sent",
-      });
-    } else if (user.temporary) {
+    }
+
+    if (user.temporary) {
       return res.status(401).json({
         status: "temporary user",
         errorMessage: "finish signing Up",
       });
     }
-    await createNotification(
+
+    // Check for unusual login
+    const isUnusualLogin = checkUserInfoChange(user, {
+      location,
+      deviceInfo,
+      ipAddress,
+    });
+    if (isUnusualLogin) {
+      const verificationToken = user.createToken();
+
+      // Parallel operations
+      await Promise.all([
+        user.save(),
+        new Email(user, verificationToken).sendUnUsualSignIn(),
+      ]);
+
+      return res.status(401).json({
+        status: "unauthorized",
+        errorMessage: "Unusual sign-in detected. An email has been sent",
+      });
+    }
+
+    // Create notification asynchronously without waiting
+    createNotification(
       user._id,
       "NEW_LOGIN",
       "New Login Detected",
       `A new login to your account was detected from a device: ${deviceInfo.deviceType} running ${deviceInfo.os}. If this was you, no further action is required. If you did not authorize this login, please secure your account immediately to protect your information.`,
       { identity }
-    );
+    ).catch((error) => console.error("Notification creation error:", error));
 
-    sendToken(user, 200, res, "successful");
+    // Send successful response
+    return sendToken(user, 200, res, "successful");
   } catch (error) {
-    console.log(error);
+    console.error("Login error:", error);
+    return res.status(500).json({
+      status: "failed",
+      errorMessage: "Internal server error",
+    });
   }
 };
 
@@ -164,8 +281,8 @@ const changeUserName = async (req, res) => {
       });
     }
     const usernameExists = await User.findOne({ username: newUsername });
-    const isUsernameTaken = usernameExists? true : false;
-    if(isUsernameTaken){
+    const isUsernameTaken = usernameExists ? true : false;
+    if (isUsernameTaken) {
       return res.status(400).json({
         success: true,
         errorMessage: "There is already a user with this username",

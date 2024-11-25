@@ -1,12 +1,12 @@
 const asyncErrorWrapper = require("express-async-handler");
-const Comment = require("../Models/comment");
+// const Comment = require("../Models/comment");
 const Story = require("../Models/story");
 const User = require("../Models/user");
 const deleteImageFile = require("../Helpers/Libraries/deleteImageFile");
-const {
-  searchHelper,
-  paginateHelper,
-} = require("../Helpers/query/queryHelpers");
+// const {
+//   searchHelper,
+//   paginateHelper,
+// } = require("../Helpers/query/queryHelpers");
 
 const calculateReadTime = (chapter) => {
   const wordCount = chapter?.trim().split(/\s+/).length;
@@ -16,16 +16,6 @@ const calculateReadTime = (chapter) => {
 const addStory = async (req, res, next) => {
   let { title, content, summary, tags, prizePerChapter, free, contentTitles } =
     req.body;
-  // console.log(
-  //   "hit route add story",
-  //   title,
-  //   content,
-  //   summary,
-  //   tags,
-  //   prizePerChapter,
-  //   free,
-  //   contentTitles
-  // );
   content = JSON.parse(content);
   tags = JSON.parse(tags);
   contentTitles = JSON.parse(contentTitles);
@@ -47,8 +37,6 @@ const addStory = async (req, res, next) => {
 
   // Calculate readtime based on word count
   let readtime = content.map((chapter) => calculateReadTime(chapter));
-  // console.log("readtime: ", readtime);
-  // console.log("an image was attached: ", req.fileLink)
   try {
     const newStory = await Story.create({
       title,
@@ -102,12 +90,21 @@ const getAllStories = async (req, res) => {
     const { specific } = req.body;
     const { slug } = req.params;
     const searchQuery = req.query.search || "";
-    const authorUsername = req.query.author; // New optional query parameter
+    const authorUsername = req.query.author;
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * pageSize;
     const userId = req.user?._id;
-    console.log("searchQuery", searchQuery, "slug", slug);
+    console.log(
+      "searchQuery",
+      searchQuery,
+      "slug",
+      slug,
+      "skip: ",
+      skip,
+      "authorUsername: ",
+      authorUsername
+    );
 
     const pipeline = [
       // Stage 1: Add likeCount from array length and calculate rank points
@@ -317,103 +314,134 @@ const getAllStories = async (req, res) => {
 const detailStory = async (req, res) => {
   const { slug } = req.params;
   const { partial, chapter } = req.body;
-  console.log("called detail story");
-  console.log(`partial: ${partial}, chapter: ${chapter}`);
 
   try {
-    // Fetch user data with only the necessary fields
-    const user = await User.findById(req.user._id, "free vouchers purchased");
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, errorMessage: "User not found" });
+    // Parallel fetch of user and story data for better performance
+    const [user, story] = await Promise.all([
+      User.findById(req.user._id, "free vouchers purchased"),
+      Story.findOne(
+        { slug },
+        "slug content contentTitles free prizePerChapter"
+      ),
+    ]);
 
-    // Fetch story data with selective projection
-    const story = await Story.findOne(
-      { slug },
-      "slug content contentTitles free prizePerChapter"
-    );
-    if (!story)
-      return res
-        .status(404)
-        .json({ success: false, errorMessage: "Story not found" });
+    // Early validation checks
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        errorMessage: "User not found",
+      });
+    }
 
-    // If partial is false and user lacks premium access, restrict access to non-free content
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        errorMessage: "Story not found",
+      });
+    }
+
+    // Function to check if chapter is in free range (0-4)
+    const isChapterFree = (chapterIndex) =>
+      chapterIndex >= 0 && chapterIndex <= 4;
+
+    // Handle partial content requests
+    if (partial && Array.isArray(chapter)) {
+      const filteredContent = chapter
+        .map((idx) => story.content[idx])
+        .filter(Boolean);
+
+      // If all requested chapters are free, return them immediately
+      if (chapter.every(isChapterFree)) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            content: filteredContent,
+            chapterTitle: story.contentTitles || [],
+          },
+        });
+      }
+
+      // If user is premium, grant full access
+      if (!user.free) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            content: filteredContent,
+            chapterTitle: story.contentTitles || [],
+          },
+        });
+      }
+
+      // Handle non-premium users
+      const purchasedChapters =
+        user.purchased.find((item) => item.slug === slug)?.chapter || [];
+      const unpaidChapters = chapter.filter(
+        (chap) => !isChapterFree(chap) && !purchasedChapters.includes(chap)
+      );
+
+      // If all chapters are either free or purchased, return content
+      if (unpaidChapters.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            content: filteredContent,
+            chapterTitle: story.contentTitles || [],
+          },
+          message: "You already have access to these chapters",
+        });
+      }
+
+      // Check vouchers for unpaid chapters
+      const billingAmount = story.prizePerChapter * unpaidChapters.length;
+      if (user.vouchers < billingAmount) {
+        return res.status(401).json({
+          errorType: "insufficient vouchers",
+          errorMessage:
+            "Insufficient vouchers! Please top up your coins to purchase more vouchers or consider upgrading to premium for unlimited access.",
+        });
+      }
+
+      // Update user's vouchers and purchased chapters
+      user.vouchers -= billingAmount;
+
+      if (purchasedChapters.length) {
+        purchasedChapters.push(...unpaidChapters);
+        user.markModified("purchased");
+      } else {
+        user.purchased.push({ slug, chapter: unpaidChapters });
+      }
+
+      await user.save();
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          content: filteredContent,
+          chapterTitle: story.contentTitles || [],
+        },
+        message: "Chapters successfully purchased",
+      });
+    }
+
+    // Handle full content requests
     if (!partial && !story.free && user.free) {
       return res.status(401).json({
         errorMessage: "You need to purchase a premium plan to do this",
       });
     }
 
-    // Prepare filtered content based on the chapter array and partial flag
-    const filteredContent =
-      partial && Array.isArray(chapter)
-        ? chapter.map((idx) => story.content[idx]).filter(Boolean)
-        : story.content;
-
-    console.log(`filteredContent: ${filteredContent}`);
-
-    // If user is premium, grant full access
-    if (!user.free) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          content: filteredContent,
-          chapterTitle: story.contentTitles || [],
-        },
-      });
-    }
-
-    // Non-premium: Verify chapter purchase or calculate voucher requirements
-    const purchasedChapters =
-      user.purchased.find((item) => item.slug === slug)?.chapter || [];
-    const unpaidChapters = chapter.filter(
-      (chap) => !purchasedChapters.includes(chap)
-    );
-
-    if (unpaidChapters.length === 0) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          content: filteredContent,
-          chapterTitle: story.contentTitles || [],
-        },
-        message: "You already have access to these chapters",
-      });
-    }
-
-    // Check if user has enough vouchers for unpaid chapters
-    const billingAmount = story.prizePerChapter * unpaidChapters.length;
-    if (user.vouchers < billingAmount) {
-      return res.status(401).json({
-        errorType: "insufficient vouchers",
-        errorMessage:
-          "Insufficient vouchers! Please top up your coins to purchase more vouchers or consider upgrading to premium for unlimited access.",
-      });
-    }
-
-    // Deduct vouchers and update purchased chapters
-    user.vouchers -= billingAmount;
-    if (purchasedChapters.length) {
-      purchasedChapters.push(...unpaidChapters);
-      user.markModified("purchased");
-    } else {
-      user.purchased.push({ slug, chapter: unpaidChapters });
-    }
-
-    await user.save();
-
     return res.status(200).json({
       success: true,
       data: {
-        content: filteredContent,
+        content: story.content,
         chapterTitle: story.contentTitles || [],
       },
-      message: "Chapters successfully purchased",
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ errorMessage: `Internal server error: ${error}` });
+    return res.status(500).json({
+      errorMessage: `Internal server error: ${error}`,
+    });
   }
 };
 

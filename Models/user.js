@@ -13,9 +13,59 @@ const UserSchema = new mongoose.Schema(
   {
     firstname: String,
     lastname: String,
-    birthdate: String,
-    interests: [String],
+    birthdate: {
+      type: String,
+      default: 'Not available'
+    },
+    interests: {
+      type: [String],
+      default: [
+        "Romance",
+        "shortStory",
+        "sci-Fi",
+        "Fantasy",
+        "Horror",
+        "Mystery",
+        "Non-Fiction",
+        "Historical Fiction",
+        "Multi-genre",
+        "Adventure",
+        "Biography",
+        "Science",
+        "Self-Help",
+        "Personal-development",
+      ],
+      enum: [
+        "Romance",
+        "shortStory",
+        "sci-Fi",
+        "Fantasy",
+        "Horror",
+        "Mystery",
+        "Non-Fiction",
+        "Historical Fiction",
+        "Multi-genre",
+        "Adventure",
+        "Biography",
+        "Science",
+        "Self-Help",
+        "Personal-development",
+      ],
+    },
     temporary: Boolean,
+    isAnonymous: {
+      type: Boolean,
+      default: false
+    },
+    anonymousId: {
+      type: String,
+      unique: true
+    },
+    accountType: {
+      type: String,
+      enum: ['anonymous', 'registered', 'converted'],
+      default: 'registered'
+    },
     username: {
       type: String,
       required: [true, "Please provide a username"],

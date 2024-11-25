@@ -11,6 +11,7 @@ const rateLimit = require("express-rate-limit");
 
 const getAccessToRoute = async (req, res, next) => {
   try {
+    console.log("hit get access token route");
     const { JWT_SECRET_KEY } = process.env;
 
     if (!isTokenIncluded(req)) {
@@ -19,13 +20,20 @@ const getAccessToRoute = async (req, res, next) => {
     }
 
     const accessToken = getAccessTokenFromCookies(req);
+    console.log("accessToken: ", accessToken);
     const decoded = jwt.verify(accessToken, JWT_SECRET_KEY);
 
     const user = await User.findById(decoded.id);
+    console.log("user found: ", user);
 
     if (!user || user?.tokenVersion !== decoded?.tokenVersion) {
       return next(
-        new CustomError("You are not authorized to access this route ", 401)
+        res
+          .status(401)
+          .json({
+            message: "You are not authorized to access this route",
+            status: "failed",
+          })
       );
     }
 
@@ -33,7 +41,7 @@ const getAccessToRoute = async (req, res, next) => {
     next();
   } catch (error) {
     console.log(error);
-    return next(new CustomError("internal server error", 500));
+    return next(res.status(500).json({ message: "internal server error", status: 'failed' }));
   }
 };
 

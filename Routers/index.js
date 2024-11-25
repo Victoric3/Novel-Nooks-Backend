@@ -9,8 +9,10 @@ const premiumRoute = require("./premium");
 const commentRoute = require("./comment");
 const sitemapRoute = require("./sitemapRouter");
 const searchSuggestionsRoute = require("./searchSuggestions");
-const notification = require("./notification")
+const notification = require("./notification");
+const userPreferences = require("./userPreference");
 
+router.use("/userPreferences", userPreferences);
 router.use("/notification", notification);
 router.use("/story", storyRoute);
 router.use("/search", searchSuggestionsRoute);

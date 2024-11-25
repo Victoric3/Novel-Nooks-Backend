@@ -1,21 +1,22 @@
 const isTokenIncluded = (req) => {
   return (
-    (req.cookies && req.cookies.token) || 
-    (req.headers.authorization?.startsWith('Bearer '))
+    (req.cookies && req.cookies.token) ||
+    req.headers.authorization?.startsWith("Bearer ")
   );
 };
 
 const getAccessTokenFromCookies = (req) => {
   // Check cookie first
   const cookieToken = req.cookies?.token;
-  
+
   // Check Authorization header if no cookie token
-  const bearerToken = req.headers.authorization?.startsWith('Bearer ')
-    ? req.headers.authorization.split(' ')[1]
+  const bearerToken = req.headers.authorization?.startsWith("Bearer ")
+    ? req.headers.authorization.split(" ")[1]
     : null;
 
   // Use whichever token is available
   const token = cookieToken || bearerToken;
+  console.log("token from cookie: ", token);
 
   if (!token) {
     throw new Error("Authentication token is missing");
@@ -26,7 +27,7 @@ const getAccessTokenFromCookies = (req) => {
 
 const sendToken = (user, statusCode, res, message) => {
   const token = user.generateJwtFromUser();
-
+  console.log("tried sending token");
   // Set cookie options
   const cookieOptions = {
     expires: new Date(
@@ -35,12 +36,13 @@ const sendToken = (user, statusCode, res, message) => {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
   };
+
   // Send the response
   return res.status(statusCode).cookie("token", token, cookieOptions).json({
     status: "success",
     message,
     role: user.role,
-    token: token
+    token: token,
   });
 };
 

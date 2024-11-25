@@ -9,8 +9,10 @@ const {
   confirmEmailAndSignUp,
   resendVerificationToken,
   unUsualSignIn,
-  changeUserName
+  changeUserName,
 } = require("../Controllers/auth");
+const { getAnonymousSession } =
+  require("../Helpers/auth/anonymousHelper");
 
 const { getAccessToRoute } = require("../Middlewares/Authorization/auth");
 
@@ -30,5 +32,7 @@ router.post("/forgotpassword", forgotpassword);
 router.put("/resetpassword", resetpassword);
 
 router.get("/private", getAccessToRoute, getPrivateData);
+
+router.post("/getAnonymousSession", getAnonymousSession);
 
 module.exports = router;
