@@ -19,6 +19,14 @@ const StorySchema = new mongoose.Schema(
     content: {
       type: [String],
       required: [true, "Please provide content"],
+      validator: (value) => {
+        const shortContent = value.filter(item => item.length < 1500);
+        if (shortContent.length > 0) {
+          console.error(`Content must be at least 1500 characters. Short items:`, shortContent);
+          return false;
+        }
+        return true;
+      }
     },
     contentTitles: {
       type: [String],
