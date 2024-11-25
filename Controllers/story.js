@@ -49,6 +49,7 @@ const addStory = async (req, res, next) => {
       prizePerChapter,
       free,
       contentTitles: contentTitles.length > 0 ? contentTitles : [],
+      contentCount: content.length
     });
 
     // Send a success response with the newStory data
@@ -280,6 +281,7 @@ const getAllStories = async (req, res) => {
                 rankPoints: 1,
                 contentCount: 1,
                 likeStatus: { $ifNull: ["$likeStatus", false] },
+                contentTitles: 1
               },
             },
           ],
@@ -645,9 +647,10 @@ const editStoryPage = asyncErrorWrapper(async (req, res, next) => {
 
 const editStory = asyncErrorWrapper(async (req, res) => {
   const { slug } = req.params;
-  let { title, content, partial, chapter, tags, summary } = req.body;
-  // console.log(title, content, partial, chapter, tags, summary)
+  let { title, content, partial, contentTitles, chapter, tags, summary } = req.body;
+  console.log(title, content, partial, chapter, tags, summary, "contentTitles: ", contentTitles);
   content = JSON.parse(content);
+  contentTitles = JSON.parse(contentTitles);
   chapter = chapter ? JSON.parse(chapter) : chapter;
   if (req.user.role !== "admin") {
     res.status(401).json({
@@ -664,6 +667,7 @@ const editStory = asyncErrorWrapper(async (req, res) => {
   }
   const previousImage = story.image;
   story.title = title || story.title;
+  story.contentTitles = contentTitles || story.contentTitles;
   story.tags = tags ? JSON.parse(tags) : story.tags;
   story.summary = summary || story.summary;
   story.image = req.fileLink;

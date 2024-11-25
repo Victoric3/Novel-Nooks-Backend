@@ -62,12 +62,13 @@ const register = async (req, res) => {
       temporary: false,
       isAnonymous: false,
       accountType: "registered",
-      vouchers: 150,
     };
 
     if (existingUser) {
       // Update existing user
       Object.assign(existingUser, userData);
+      existingUser.username = await generateUniqueUsername();
+      existingUser.vouchers = 150;
 
       if (
         checkUserInfoChange(existingUser, { location, deviceInfo, ipAddress })
@@ -95,8 +96,7 @@ const register = async (req, res) => {
     if (anonymousUser) {
       // Convert anonymous user
       Object.assign(anonymousUser, userData);
-      anonymousUser.username = await generateUniqueUsername(anonymousUser);
-
+      anonymousUser.vouchers += 150;
       if (
         checkUserInfoChange(anonymousUser, { location, deviceInfo, ipAddress })
       ) {
@@ -137,14 +137,33 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   try {
-    const { identity, password, location, ipAddress, deviceInfo, isAnonymous } =
+    const { identity, password, location, ipAddress, deviceInfo, isAnonymous, anonymousId } =
       req.body;
     console.log(location, ipAddress, deviceInfo);
+    const [anonymousUser, user] = await Promise.all([
+      anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("firstname") : null,
+      User.findOne({ email: identity, isAnonymous: false }).select(
+        "+password emailStatus temporary location ipAddress deviceInfo role email firstname"
+      ),
+    ]);
+
     // Early validation checks
-    if (isAnonymous) {
+    if (isAnonymous && !user) {
+      //create a token
+      const verificationToken = anonymousUser.createToken();
+
+      //assign email to anonymous user
+      anonymousUser.email = identity;
+
+      //save anonymous user and send verify token
+      await Promise.all([
+        anonymousUser.save(),
+        new Email(anonymousUser, verificationToken).sendConfirmEmail(),
+      ]);
+
       return res.status(401).json({
-        status: "anonymous",
-        errorMessage: "Sign up to unlock full access!",
+        status: "not found",
+        errorMessage: "Please check your email to complete your account creation",
       });
     }
 
@@ -154,13 +173,6 @@ const login = async (req, res) => {
         errorMessage: "invalid email or password",
       });
     }
-
-    // Single database query with required fields
-    const user = await User.findOne({
-      email: identity,
-    }).select(
-      "+password emailStatus temporary location ipAddress deviceInfo role email firstname"
-    );
 
     // Handle non-existent user case
     if (!user) {
