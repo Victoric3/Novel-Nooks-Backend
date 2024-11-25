@@ -26,6 +26,12 @@ rateLimit({
       return req.user
     },
   });
+  // const allowedOrigin = process.env.URL;
+  // const corsOptions = {
+  //   origin: allowedOrigin, // Allow only the specific URL from the environment variable
+  //   credentials: true,     // Allow credentials (cookies, authorization headers, etc.)
+  //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  // };
   app.use(cors());
 
 app.get('/', (req, res) => {
