@@ -13,6 +13,7 @@ const {
   generateUniqueUsername,
 } = require("../Helpers/auth/generateUniqueUsername");
 const crypto = require("crypto");
+const { generateAnonymousId } = require("../Helpers/auth/anonymousHelper");
 
 const getPrivateData = (req, res, next) => {
   try {
@@ -140,7 +141,7 @@ const login = async (req, res) => {
   try {
     const { identity, password, location, ipAddress, deviceInfo, isAnonymous, anonymousId } =
       req.body;
-    console.log(location, ipAddress, deviceInfo);
+    // console.log(location, ipAddress, deviceInfo);
     const [anonymousUser, user] = await Promise.all([
       anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("+password firstname email") : null,
       User.findOne({ email: identity, isAnonymous: false }).select(
@@ -180,6 +181,7 @@ const login = async (req, res) => {
 
     // Handle non-existent user case
     if (!user) {
+      const anonymousId = generateAnonymousId();
       console.log("trying to create new user");
       // Create new user asynchronously
       const newUserPromise = await User.create({
@@ -195,8 +197,9 @@ const login = async (req, res) => {
         location: [location],
         ipAddress: [ipAddress],
         deviceInfo: [deviceInfo],
+        anonymousId
       });
-
+      console.log("newUserPromise: ", newUserPromise)
       const verificationToken = newUserPromise.createToken();
 
       // Perform save and email operations in parallel
