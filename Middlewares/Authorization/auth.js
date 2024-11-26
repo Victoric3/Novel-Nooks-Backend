@@ -11,7 +11,7 @@ const rateLimit = require("express-rate-limit");
 
 const getAccessToRoute = async (req, res, next) => {
   try {
-    console.log("hit get access token route");
+    // console.log("hit get access token route");
     const { JWT_SECRET_KEY } = process.env;
 
     if (!isTokenIncluded(req)) {

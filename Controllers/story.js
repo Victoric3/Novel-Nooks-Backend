@@ -27,15 +27,15 @@ const addStory = async (req, res, next) => {
     });
   }
 
-  const shortContent = content.filter((item) => item.length < 500);
+  const shortContent = content.filter((item) => item.length < 100);
   if (shortContent.length > 0) {
     console.error(
-      `Content must be at least 1500 characters. Short items:`,
+      `Content must be at least 100 characters.`,
       shortContent
     );
     res.status(400).json({
       success: false,
-      errorMessage: "Each chapter must be at least 500 characters.",
+      errorMessage: "Each chapter must be at least 100 characters.",
     });
   }
   // Ensure content is an array of chapters (strings)
@@ -109,16 +109,6 @@ const getAllStories = async (req, res) => {
     const pageSize = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * pageSize;
     const userId = req.user?._id;
-    console.log(
-      "searchQuery",
-      searchQuery,
-      "slug",
-      slug,
-      "skip: ",
-      skip,
-      "authorUsername: ",
-      authorUsername
-    );
 
     const pipeline = [
       // Stage 1: Add likeCount from array length and calculate rank points
@@ -682,15 +672,15 @@ const editStory = async (req, res) => {
       errorMessage: "you are not allowed to do this",
     });
   }
-  const shortContent = content.filter((item) => item.length < 500);
+  const shortContent = content.filter((item) => item.length < 100);
   if (shortContent.length > 0) {
     console.error(
-      `Content must be at least 500 characters. Short items:`,
+      `Content must be at least 100 characters.`,
       shortContent
     );
     return res.status(400).json({
       success: false,
-      errorMessage: "Each chapter must be at least 500 characters.",
+      errorMessage: "Each chapter must be at least 100 characters.",
     });
   }
   const story = await Story.findOne({ slug: slug });

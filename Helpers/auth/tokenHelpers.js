@@ -18,7 +18,7 @@ const getAccessTokenFromCookies = (req) => {
 
   // Use whichever token is available
   const token = cookieToken || bearerToken;
-  console.log("token from cookie: ", token);
+  // console.log("token from cookie: ", token);
 
   if (!token) {
     throw new Error("Authentication token is missing");

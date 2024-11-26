@@ -142,7 +142,7 @@ const login = async (req, res) => {
       req.body;
     console.log(location, ipAddress, deviceInfo);
     const [anonymousUser, user] = await Promise.all([
-      anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("firstname email") : null,
+      anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("+password firstname email") : null,
       User.findOne({ email: identity, isAnonymous: false }).select(
         "+password emailStatus temporary location ipAddress deviceInfo role email firstname username tokenVersion"
       ),
@@ -150,11 +150,14 @@ const login = async (req, res) => {
 
     // Early validation checks
     if (isAnonymous && !user) {
+      console.log('user: ', user);
       //create a token
       const verificationToken = anonymousUser.createToken();
-
+      console.log("verificationToken: ", verificationToken)
+      console.log("anonymousUser: ", anonymousUser)
       //assign email to anonymous user
       anonymousUser.email = identity;
+      anonymousUser.password = password;
 
       //save anonymous user and send verify token
       await Promise.all([
@@ -163,7 +166,7 @@ const login = async (req, res) => {
       ]);
 
       return res.status(401).json({
-        status: "not found",
+        status: "anonymous",
         errorMessage: "Please check your email to complete your account creation",
       });
     }
