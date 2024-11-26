@@ -1,3 +1,5 @@
+const jwt = require("jsonwebtoken");
+
 const isTokenIncluded = (req) => {
   return (
     (req.cookies && req.cookies.token) ||
@@ -27,7 +29,7 @@ const getAccessTokenFromCookies = (req) => {
 
 const sendToken = (user, statusCode, res, message) => {
   const token = user.generateJwtFromUser();
-  console.log("tried sending token");
+  const decoded = jwt.decode(token);
   // Set cookie options
   const cookieOptions = {
     expires: new Date(

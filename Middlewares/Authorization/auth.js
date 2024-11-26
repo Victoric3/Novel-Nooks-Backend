@@ -20,21 +20,17 @@ const getAccessToRoute = async (req, res, next) => {
     }
 
     const accessToken = getAccessTokenFromCookies(req);
-    console.log("accessToken: ", accessToken);
     const decoded = jwt.verify(accessToken, JWT_SECRET_KEY);
 
     const user = await User.findById(decoded.id);
-    console.log("user found: ", user);
-
+    
     if (!user || user?.tokenVersion !== decoded?.tokenVersion) {
-      return next(
-        res
+      return res
           .status(401)
           .json({
-            message: "You are not authorized to access this route",
+            errorMessage: "You are not authorized to access this route",
             status: "failed",
           })
-      );
     }
 
     req.user = user;

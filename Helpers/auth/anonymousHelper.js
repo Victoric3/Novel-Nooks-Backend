@@ -72,7 +72,7 @@ const getAnonymousSession = async (req, res) => {
       "deviceInfo.deviceId": deviceInfo.deviceId,
     });
 
-    console.log("anonymousUser: ", anonymousUser);
+    // console.log("anonymousUser: ", anonymousUser);
 
     if (!anonymousUser) {
       anonymousUser = await createAnonymousUser(
@@ -80,12 +80,12 @@ const getAnonymousSession = async (req, res) => {
         ipAddress,
         location
       );
-      console.log("anonymousUser:", anonymousUser);
+      // console.log("anonymousUser:", anonymousUser);
     }
 
     return sendToken(anonymousUser, 200, res, "anonymous session created");
   } catch (error) {
-    console.error("Anonymous session error:", error);
+    // console.error("Anonymous session error:", error);
 
     // More specific error messages based on error type
     const errorMessage =

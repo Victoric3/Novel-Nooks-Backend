@@ -16,6 +16,7 @@ const crypto = require("crypto");
 
 const getPrivateData = (req, res, next) => {
   try {
+    console.log("got access to route");
     return res.status(200).json({
       success: true,
       message: "You got access to the private data in this route",
@@ -143,7 +144,7 @@ const login = async (req, res) => {
     const [anonymousUser, user] = await Promise.all([
       anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("firstname email") : null,
       User.findOne({ email: identity, isAnonymous: false }).select(
-        "+password emailStatus temporary location ipAddress deviceInfo role email firstname"
+        "+password emailStatus temporary location ipAddress deviceInfo role email firstname username tokenVersion"
       ),
     ]);
 
@@ -345,7 +346,6 @@ const forgotpassword = asyncErrorWrapper(async (req, res, next) => {
 
 const resetpassword = async (req, res) => {
   const { resetPasswordToken, newPassword } = req.body;
-  console.log(resetPasswordToken, newPassword);
   try {
     if (!resetPasswordToken) {
       res.status(400).json({

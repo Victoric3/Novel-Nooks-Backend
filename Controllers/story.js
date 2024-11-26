@@ -658,9 +658,11 @@ const editStoryPage = asyncErrorWrapper(async (req, res, next) => {
   });
 });
 
-const editStory = asyncErrorWrapper(async (req, res) => {
-  const { slug } = req.params;
-  let { title, content, partial, contentTitles, chapter, tags, summary } =
+const editStory = async (req, res) => {
+  try{
+
+    const { slug } = req.params;
+    let { title, content, partial, contentTitles, chapter, tags, summary } =
     req.body;
   // console.log(
   //   title,
@@ -676,17 +678,17 @@ const editStory = asyncErrorWrapper(async (req, res) => {
   contentTitles = JSON.parse(contentTitles);
   chapter = chapter ? JSON.parse(chapter) : chapter;
   if (req.user.role !== "admin") {
-    res.status(401).json({
+    return res.status(401).json({
       errorMessage: "you are not allowed to do this",
     });
   }
   const shortContent = content.filter((item) => item.length < 500);
   if (shortContent.length > 0) {
     console.error(
-      `Content must be at least 1500 characters. Short items:`,
+      `Content must be at least 500 characters. Short items:`,
       shortContent
     );
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
       errorMessage: "Each chapter must be at least 500 characters.",
     });
@@ -743,7 +745,13 @@ const editStory = asyncErrorWrapper(async (req, res) => {
     success: true,
     data: story,
   });
-});
+  }catch(err){
+    res.status(500).json({
+      success: false,
+      errorMessage: error
+    })
+}
+};
 
 const deleteStory = asyncErrorWrapper(async (req, res, next) => {
   const { slug } = req.params;
