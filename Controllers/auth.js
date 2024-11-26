@@ -141,7 +141,7 @@ const login = async (req, res) => {
       req.body;
     console.log(location, ipAddress, deviceInfo);
     const [anonymousUser, user] = await Promise.all([
-      anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("firstname") : null,
+      anonymousId ? User.findOne({ anonymousId, isAnonymous: true }).select("firstname email") : null,
       User.findOne({ email: identity, isAnonymous: false }).select(
         "+password emailStatus temporary location ipAddress deviceInfo role email firstname"
       ),

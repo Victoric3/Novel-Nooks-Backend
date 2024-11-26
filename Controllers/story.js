@@ -27,6 +27,17 @@ const addStory = async (req, res, next) => {
     });
   }
 
+  const shortContent = content.filter((item) => item.length < 500);
+  if (shortContent.length > 0) {
+    console.error(
+      `Content must be at least 1500 characters. Short items:`,
+      shortContent
+    );
+    res.status(400).json({
+      success: false,
+      errorMessage: "Each chapter must be at least 500 characters.",
+    });
+  }
   // Ensure content is an array of chapters (strings)
   if (!Array.isArray(content)) {
     return res.status(400).json({
@@ -49,7 +60,7 @@ const addStory = async (req, res, next) => {
       prizePerChapter,
       free,
       contentTitles: contentTitles.length > 0 ? contentTitles : [],
-      contentCount: content.length
+      contentCount: content.length,
     });
 
     // Send a success response with the newStory data
@@ -60,8 +71,10 @@ const addStory = async (req, res, next) => {
     });
   } catch (error) {
     console.log(error);
-    // Handle errors
-    next(error);
+    res.status(500).json({
+      status: "failed",
+      errorMessage: error,
+    });
   }
 };
 
@@ -281,7 +294,7 @@ const getAllStories = async (req, res) => {
                 rankPoints: 1,
                 contentCount: 1,
                 likeStatus: { $ifNull: ["$likeStatus", false] },
-                contentTitles: 1
+                contentTitles: 1,
               },
             },
           ],
@@ -647,14 +660,35 @@ const editStoryPage = asyncErrorWrapper(async (req, res, next) => {
 
 const editStory = asyncErrorWrapper(async (req, res) => {
   const { slug } = req.params;
-  let { title, content, partial, contentTitles, chapter, tags, summary } = req.body;
-  console.log(title, content, partial, chapter, tags, summary, "contentTitles: ", contentTitles);
+  let { title, content, partial, contentTitles, chapter, tags, summary } =
+    req.body;
+  // console.log(
+  //   title,
+  //   content,
+  //   partial,
+  //   chapter,
+  //   tags,
+  //   summary,
+  //   "contentTitles: ",
+  //   contentTitles
+  // );
   content = JSON.parse(content);
   contentTitles = JSON.parse(contentTitles);
   chapter = chapter ? JSON.parse(chapter) : chapter;
   if (req.user.role !== "admin") {
     res.status(401).json({
       errorMessage: "you are not allowed to do this",
+    });
+  }
+  const shortContent = content.filter((item) => item.length < 500);
+  if (shortContent.length > 0) {
+    console.error(
+      `Content must be at least 1500 characters. Short items:`,
+      shortContent
+    );
+    res.status(400).json({
+      success: false,
+      errorMessage: "Each chapter must be at least 500 characters.",
     });
   }
   const story = await Story.findOne({ slug: slug });
@@ -701,7 +735,7 @@ const editStory = asyncErrorWrapper(async (req, res) => {
     story.markModified("content");
   }
 
-  console.log("content", content, "partial: ", partial);
+  // console.log("content", content, "partial: ", partial);
 
   await story.save();
 
