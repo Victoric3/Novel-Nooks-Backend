@@ -673,7 +673,7 @@ const editStory = async (req, res) => {
     });
   }
   const shortContent = content.filter((item) => item.length < 100);
-  if (shortContent.length > 0) {
+  if (shortContent.length > 0 && chapter.length > 0) {
     console.error(
       `Content must be at least 100 characters.`,
       shortContent
@@ -706,7 +706,7 @@ const editStory = async (req, res) => {
   }
 
   // Update content based on whether it is partial or full
-  if (partial == true && Array.isArray(chapter) && content) {
+  if (partial == true && Array.isArray(chapter) && chapter.length > 0 && content) {
     // Update specific chapters
     chapter.forEach((index, i) => {
       if (index >= 0 && index < story.content.length) {
@@ -719,11 +719,11 @@ const editStory = async (req, res) => {
     });
 
     story.markModified("content");
-  } else {
+  } else if(partial == false) {
     // If not partial, overwrite the entire content
     story.content = [...content];
     story.contentCount = content.length;
-    console.log("story.content: ", story.content);
+    // console.log("story.content: ", story.content);
     story.markModified("content");
   }
 
