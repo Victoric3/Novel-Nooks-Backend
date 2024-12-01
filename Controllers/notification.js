@@ -3,7 +3,7 @@ const Notification = require("../Models/notification");
 
 const getNotifications = async (req, res) => {
   try {
-    console.log("tried hitting this route");
+    // console.log("tried hitting this route");
     const notifications = await Notification.find({
       recipient: req.user.id,
       read: false,

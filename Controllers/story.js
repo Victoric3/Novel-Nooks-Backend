@@ -656,11 +656,10 @@ const editStory = async (req, res) => {
     req.body;
   // console.log(
   //   title,
-  //   content,
-  //   partial,
-  //   chapter,
-  //   tags,
-  //   summary,
+  //   "content: ", content,
+  //   "partial: ", partial,
+  //   "chapter: ", chapter,
+  //   "tags: ", tags,
   //   "contentTitles: ",
   //   contentTitles
   // );
