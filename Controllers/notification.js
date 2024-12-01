@@ -1,17 +1,27 @@
 const asyncErrorWrapper = require("express-async-handler");
 const Notification = require("../Models/notification");
 
-const getNotifications = asyncErrorWrapper(async (req, res) => {
-  console.log("tried hitting this route")
-  const notifications = await Notification.find({ recipient: req.user.id })
-    .sort({ createdAt: -1 })
-    .limit(50);
+const getNotifications = async (req, res) => {
+  try {
+    console.log("tried hitting this route");
+    const notifications = await Notification.find({
+      recipient: req.user.id,
+      read: false,
+    })
+      .sort({ createdAt: -1 })
+      .limit(50);
 
-  res.status(200).json({
-    success: true,
-    data: notifications,
-  });
-});
+    res.status(200).json({
+      success: true,
+      data: notifications,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      errorMessage: "Internal server error",
+    });
+  }
+};
 
 const markAsRead = asyncErrorWrapper(async (req, res) => {
   const { notificationId } = req.params;
@@ -64,8 +74,29 @@ const deleteNotification = asyncErrorWrapper(async (req, res) => {
 });
 
 // Helper function to create notifications
-const createNotification = async (recipientId, type, title, message, data = {}) => {
+const createNotification = async (
+  recipientId,
+  type,
+  title,
+  message,
+  data = {},
+  timeInterval = 10 * 60 * 1000 // Default: 10 minutes
+) => {
   console.log(recipientId, type, title, message, data);
+
+  // Check for an existing notification of the same type within the time interval
+  const existingNotification = await Notification.findOne({
+    recipient: recipientId,
+    type,
+    createdAt: { $gte: new Date(Date.now() - timeInterval) },
+  });
+
+  if (existingNotification) {
+    console.log("Notification not created: within time interval");
+    return null; // Do not create a new notification
+  }
+
+  // Create a new notification
   return await Notification.create({
     recipient: recipientId,
     type,

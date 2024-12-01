@@ -86,12 +86,18 @@ const register = async (req, res) => {
         });
       }
 
-      await existingUser.save();
+      await Promise.all(
+        [
+          existingUser.save(),
+          //send welcome email to new user
+          new Email(existingUser, `${process.env.URL}`).sendWelcome()
+        ]
+      )
       return sendToken(
         existingUser,
         200,
         res,
-        "user information updated successfully"
+        "registration successful"
       );
     }
 
@@ -113,7 +119,14 @@ const register = async (req, res) => {
         });
       }
 
-      await anonymousUser.save();
+      await Promise.all(
+        [
+          anonymousUser.save(),
+          //send welcome email to new user
+          new Email(anonymousUser, `${process.env.URL}`).sendWelcome()
+        ]
+      )
+
       return sendToken(anonymousUser, 200, res, "registration successful");
     }
 
@@ -154,8 +167,8 @@ const login = async (req, res) => {
       console.log('user: ', user);
       //create a token
       const verificationToken = anonymousUser.createToken();
-      console.log("verificationToken: ", verificationToken)
-      console.log("anonymousUser: ", anonymousUser)
+      // console.log("verificationToken: ", verificationToken)
+      // console.log("anonymousUser: ", anonymousUser)
       //assign email to anonymous user
       anonymousUser.email = identity;
       anonymousUser.password = password;
@@ -403,6 +416,7 @@ const resetpassword = async (req, res) => {
 };
 
 const confirmEmailAndSignUp = catchAsync(async (req, res, next) => {
+try {
   const { token } = req.body;
   //1  get user based on token
   const hashedToken = crypto.createHash("shake256").update(token).digest("hex");
@@ -424,9 +438,7 @@ const confirmEmailAndSignUp = catchAsync(async (req, res, next) => {
   user.verificationTokenExpires = undefined;
   await user.save();
 
-  try {
-    //send welcome email to new user
-    new Email(user, `${process.env.URL}/addstory`).sendWelcome();
+    
     res.status(200).json({
       message: `Your email has been confirmed`,
     });

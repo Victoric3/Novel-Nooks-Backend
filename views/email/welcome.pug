@@ -13,7 +13,7 @@ block content
 
   // Welcome message
   p(style="font-family: 'Georgia', serif; font-size: 16px; font-weight: normal; margin: 0; margin-bottom: 15px; color: #333;")
-    | Dear #{firstName},
+    | Dear #{firstName}, 
 
   p(style="font-family: 'Georgia', serif; font-size: 16px; font-weight: normal; margin: 0; margin-bottom: 15px; text-align: center; color: #333;")
     | Welcome to #{process.env.SITE_NAME}! We're excited to have you dive into a world of stories, spanning across genres and styles.
@@ -33,31 +33,26 @@ block content
   // Feature list
   ul(style="list-style-type: disc; margin: 0 0 0 20px; font-family: 'Georgia', serif; font-size: 16px; font-weight: normal; text-align: left; color: #333;")
     li(style="margin: 0; margin-bottom: 10px;")
-      | **Curated Novels:**
-      | A handpicked collection of novels from various genres.
+      | Curated Novels: A handpicked collection of novels from various genres.
     li(style="margin: 0; margin-bottom: 10px;")
-      | **Personalized Recommendations:**
-      | Discover books based on your reading preferences.
+      | Personalized Recommendations: Discover books based on your reading preferences.
     li(style="margin: 0; margin-bottom: 10px;")
-      | **Interactive Reading Experience:**
-      | Engage with other readers, leave reviews, and join discussions.
+      | Interactive Reading Experience: Engage with other readers, leave reviews, and join discussions.
     li(style="margin: 0; margin-bottom: 10px;")
-      | **Seamless Offline Reading:**
-      | Download novels and enjoy them offline, anytime, anywhere.
+      | Seamless Offline Reading: Download novels and enjoy them offline, anytime, anywhere.
     li(style="margin: 0; margin-bottom: 10px;")
-      | **Exclusive Content:**
-      | Access exclusive stories and early releases.
+      | Exclusive Content: Access exclusive stories and early releases.
 
   // Sign-in prompt
   p(style="font-family: 'Georgia', serif; font-size: 16px; font-weight: normal; margin: 15px 0; text-align: center; color: #333;")
-    | To get started, simply  
+    | To get started, simply 
     a(href=`${process.env.FRONTEND_BASEURL}/signIn`, style="text-decoration: none; color: #005f99;")
-      | log in
+      | log in 
     | to your #{process.env.SITE_NAME} account and immerse yourself in a captivating reading journey.
 
   // Closing and contact information
   p(style="font-family: 'Georgia', serif; font-size: 16px; font-weight: normal; margin: 15px 0; text-align: center; color: #333;")
-    | Thank you for choosing #{process.env.SITE_NAME}. If you have any questions or need assistance, please contact us at  
+    | Thank you for choosing #{process.env.SITE_NAME}. If you have any questions or need assistance, please contact us at 
     a(href=`mailto:${process.env.EMAIL_ACCOUNT}`, style="text-decoration: none; color: #005f99;")
       | #{process.env.EMAIL_ACCOUNT}
     |.
@@ -67,4 +62,3 @@ block content
     | Best regards,
   p(style="font-family: 'Georgia', serif; font-size: 16px; font-weight: normal; margin: 0; text-align: center; color: #333;")
     | The #{process.env.SITE_NAME} Team
-
