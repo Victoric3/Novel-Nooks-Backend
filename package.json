@@ -23,6 +23,7 @@
         "express-async-handler": "^1.2.0",
         "express-fileupload": "^1.4.3",
         "express-rate-limit": "^7.1.5",
+        "firebase-admin": "^13.0.2",
         "geolib": "^3.3.4",
         "google-auth-library": "^9.2.0",
         "googleapis": "^128.0.0",

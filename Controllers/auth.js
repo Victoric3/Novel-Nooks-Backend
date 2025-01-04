@@ -212,7 +212,7 @@ const login = async (req, res) => {
         deviceInfo: [deviceInfo],
         anonymousId
       });
-      console.log("newUserPromise: ", newUserPromise)
+      // console.log("newUserPromise: ", newUserPromise)
       const verificationToken = newUserPromise.createToken();
 
       // Perform save and email operations in parallel
@@ -281,13 +281,29 @@ const login = async (req, res) => {
       });
     }
 
-    // Create notification asynchronously without waiting
+     createNotification(
+      req.user.id,
+      type,
+      title,
+      message,
+      data,
+      timeInterval
+    );
+
     createNotification(
       user._id,
       "NEW_LOGIN",
       "New Login Detected",
       `A new login to your account was detected from a device: ${deviceInfo.deviceType} running ${deviceInfo.os}. If this was you, no further action is required. If you did not authorize this login, please secure your account immediately to protect your information.`,
-      { identity }
+      {
+        fcmToken: user.fcmToken,
+        route: "notifications",
+        type: "NEW_LOGIN",
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+        id: "1",
+        message: `A new login to your account was detected from a device: ${deviceInfo.deviceType} running ${deviceInfo.os}. If this was you, no further action is required. If you did not authorize this login, please secure your account immediately to protect your information.`,
+      },
+      0
     ).catch((error) => console.error("Notification creation error:", error));
 
     // Send successful response
