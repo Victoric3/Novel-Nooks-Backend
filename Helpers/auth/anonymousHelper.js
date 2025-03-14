@@ -2,60 +2,53 @@ const User = require("../../Models/user");
 const crypto = require("crypto");
 const { generateUniqueUsername } = require("./generateUniqueUsername");
 const { sendToken } = require("./tokenHelpers");
+const rateLimit = require("express-rate-limit");
 
 const generateAnonymousId = () => {
-  const timestamp = Date.now();
-  const randomBytes = crypto.randomBytes(12).toString("hex");
-  return `anon_${timestamp}_${randomBytes}`;
+  return `anon_${Date.now()}_${crypto.randomBytes(8).toString("hex")}`;
 };
 
 const validateDeviceInfo = (deviceInfo) => {
-  if (!deviceInfo || !deviceInfo.deviceId) {
+  if (!deviceInfo || !JSON.parse(deviceInfo)["uniqueIdentifier"]) {
     throw new Error("Invalid device information provided");
   }
   return true;
 };
 
-const createAnonymousUser = async (deviceInfo, ipAddress, location) => {
+const anonymousRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: "Too many anonymous accounts created from this IP"
+});
+
+const createAnonymousUser = async (ipAddress, deviceInfo) => {
   try {
     const anonymousId = generateAnonymousId();
     const username = await generateUniqueUsername();
-    console.log("username: ", username);
-    const password = crypto.randomBytes(32).toString("hex");
-    console.log("password: ", password);
+    const password = crypto.randomBytes(16).toString("hex");
+
     const anonymousUser = await User.create({
-      firstname: username,
-      lastname: "lastname",
-      birthdate: "birthdate",
-      temporary: true,
-      username: username,
-      email: `${anonymousId}@novelnooks.com`,
-      password: password,
-      photo:
-        "https://i.ibb.co/N3vsnh9/e7982589-9001-476a-9945-65d56b8cd887.jpg",
-      location: [location],
+      username,
+      email: `${anonymousId}@temp.com`,
+      password,
       ipAddress: [ipAddress],
-      deviceInfo: [deviceInfo],
       isAnonymous: true,
-      anonymousId: anonymousId,
-      accountType: "anonymous",
+      anonymousId,
+      temporary: true,
+      deviceInfo
     });
 
-    // Add index hints for better performance
-    const savedUser = await anonymousUser.save();
-    console.log("savedUser: ", savedUser);
-    console.log("user has been saved, moving on..");
-    return savedUser;
+    return anonymousUser;
   } catch (error) {
-    console.error("Error creating anonymous user:", error);
     throw new Error(`Failed to create anonymous user: ${error.message}`);
   }
 };
 
 const getAnonymousSession = async (req, res) => {
   try {
-    const { deviceInfo, ipAddress, location } = req.body;
-    console.log(deviceInfo, ipAddress, location);
+    const { deviceInfo, ipAddress } = req.body;
+    console.log("deviceInfo[uniqueIdentifier]: ", deviceInfo["uniqueIdentifier"]);
+
     // Input validation
     if (!deviceInfo) {
       return res.status(400).json({
@@ -69,23 +62,22 @@ const getAnonymousSession = async (req, res) => {
     // Use lean() for better performance on read operations
     let anonymousUser = await User.findOne({
       isAnonymous: true,
-      "deviceInfo.deviceId": deviceInfo.deviceId,
+      "deviceInfo": deviceInfo,
     });
 
-    // console.log("anonymousUser: ", anonymousUser);
-
+    
+    
     if (!anonymousUser) {
       anonymousUser = await createAnonymousUser(
-        deviceInfo,
         ipAddress,
-        location
+        deviceInfo
       );
-      // console.log("anonymousUser:", anonymousUser);
     }
+    console.log("anonymousUser: ", anonymousUser);
 
-    return sendToken(anonymousUser, 200, res, "anonymous session created");
+    return sendToken(anonymousUser, 200, req, res, "anonymous session created");
   } catch (error) {
-    // console.error("Anonymous session error:", error);
+    console.error("Anonymous session error:", error);
 
     // More specific error messages based on error type
     const errorMessage =
@@ -107,4 +99,5 @@ module.exports = {
   createAnonymousUser,
   generateAnonymousId,
   validateDeviceInfo,
+  anonymousRateLimit
 };

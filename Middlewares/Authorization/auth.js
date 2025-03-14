@@ -1,13 +1,12 @@
 const CustomError = require("../../Helpers/error/CustomError");
 const User = require("../../Models/user");
 const jwt = require("jsonwebtoken");
-const asyncErrorWrapper = require("express-async-handler");
 const {
   isTokenIncluded,
   getAccessTokenFromCookies,
 } = require("../../Helpers/auth/tokenHelpers");
-const express = require("express");
 const rateLimit = require("express-rate-limit");
+const crypto = require("crypto");
 
 const getAccessToRoute = async (req, res, next) => {
   try {
@@ -41,6 +40,46 @@ const getAccessToRoute = async (req, res, next) => {
   }
 };
 
+const validateSession = async (req, res, next) => {
+  try {
+    const token = getAccessTokenFromCookies(req);
+    // console.log(token);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+    // console.log("decoded: ", decoded);
+    
+    const user = await User.findById(decoded.id);
+    // console.log("user", user);
+    
+    // Clean up expired sessions first
+    await user.cleanupSessions();
+    
+    if (!user || !user.validateSession(token)) {
+      return res.status(401).json({
+        status: "failed",
+        errorMessage: "Invalid or expired session"
+      });
+    }
+
+    // Update session last active time
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const session = user.sessions.find(s => s.token === hashedToken);
+    
+    if (session) {
+      session.lastActive = new Date();
+      await user.save();
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error("Session validation error:", error);
+    return res.status(401).json({
+      status: "failed", 
+      errorMessage: "Not authorized to access this route"
+    });
+  }
+};
+
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 2, // 2 requests per minute
@@ -50,4 +89,4 @@ const apiLimiter = rateLimit({
   },
 });
 
-module.exports = { getAccessToRoute, apiLimiter };
+module.exports = { getAccessToRoute, apiLimiter, validateSession };

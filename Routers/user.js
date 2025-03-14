@@ -1,6 +1,7 @@
 const express = require("express");
 
 const {
+  testmail,
   register,
   login,
   forgotpassword,
@@ -9,30 +10,31 @@ const {
   confirmEmailAndSignUp,
   resendVerificationToken,
   unUsualSignIn,
-  changeUserName,
+  googleSignIn,
+  verificationRateLimit
 } = require("../Controllers/auth");
-const { getAnonymousSession } =
-  require("../Helpers/auth/anonymousHelper");
 
-const { getAccessToRoute } = require("../Middlewares/Authorization/auth");
+const { anonymousRateLimit, getAnonymousSession } = require("../Helpers/auth/anonymousHelper");
+
+const { validateSession } = require("../Middlewares/Authorization/auth");
 
 const router = express.Router();
 
+router.post("/testmail", testmail);
 router.post("/register", register);
-router.post("/resendVerificationToken", resendVerificationToken);
+router.post("/googleSignIn", googleSignIn);
+router.post("/resendVerificationToken", verificationRateLimit, resendVerificationToken);
 router.patch("/confirmEmailAndSignUp", confirmEmailAndSignUp);
 router.patch("/unUsualSignIn", unUsualSignIn);
+router.post("/anonymous", anonymousRateLimit, getAnonymousSession);
 
 router.post("/login", login);
-
-router.patch("/changeUsername", getAccessToRoute, changeUserName);
 
 router.post("/forgotpassword", forgotpassword);
 
 router.put("/resetpassword", resetpassword);
 
-router.get("/private", getAccessToRoute, getPrivateData);
+router.get("/private", validateSession, getPrivateData);
 
-router.post("/getAnonymousSession", getAnonymousSession);
 
 module.exports = router;

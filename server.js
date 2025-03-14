@@ -1,3 +1,4 @@
+const routes = require('./Routers');
 const express = require("express")
 const cookieParser = require('cookie-parser');
 const dotenv = require("dotenv")
@@ -11,7 +12,7 @@ const customErrorHandler = require("./Middlewares/Errors/customErrorHandler")
 
 dotenv.config({ path: './config.env' })
 
-connectDatabase()
+connectDatabase();
 
 const app = express();
 app.use(express.json());
@@ -40,6 +41,8 @@ app.get('/', (req, res) => {
 app.use("/",IndexRoute)
 
 app.use(customErrorHandler)
+
+app.use(process.env.API_VERSION, routes);
 
 const PORT = process.env.PORT || 8000 ;
 
