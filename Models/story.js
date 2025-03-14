@@ -38,23 +38,7 @@ const StorySchema = new mongoose.Schema(
     },
     tags: {
       type: [String],
-      default: ["Multi-genre"],
-      enum: [
-        "Romance",
-        "shortStory",
-        "sci-Fi",
-        "Fantasy",
-        "Horror",
-        "Mystery",
-        "Non-Fiction",
-        "Historical Fiction",
-        "Multi-genre",
-        "Adventure",
-        "Biography",
-        "Science",
-        "Self-Help",
-        "Personal-development",
-      ],
+      default: ["Multi-genre"]
     },
     summary: {
       type: String,

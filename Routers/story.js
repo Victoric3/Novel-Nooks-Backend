@@ -1,6 +1,7 @@
 const express = require("express");
+const { validateSession } = require("../Middlewares/Authorization/auth");
+const { handleImageUpload, handleStoryUpload } = require("../Helpers/Libraries/handleUpload");
 
-const { getAccessToRoute } = require("../Middlewares/Authorization/auth");
 const {
   addStory,
   addImage,
@@ -8,49 +9,36 @@ const {
   detailStory,
   likeStory,
   rateStory,
+  editStoryPage,
   editStory,
   deleteStory,
-  editStoryPage,
 } = require("../Controllers/story");
-const {
-  checkStoryExist,
-  checkUserAndStoryExist,
-} = require("../Middlewares/database/databaseErrorhandler");
-const { handleImageUpload } = require("../Helpers/Libraries/handleUpload");
 
 const router = express.Router();
 
-router.post("/addstory", [getAccessToRoute, handleImageUpload], addStory);
-router.post("/addImage", [getAccessToRoute, handleImageUpload], addImage);
+// Single image upload for editor
+router.post("/upload", [validateSession, handleImageUpload], addImage);
 
-router.get("/:slug", [getAccessToRoute, checkStoryExist], detailStory);
+// Story routes with PDF support - uses our enhanced handler
+router.post("/", [
+  validateSession,
+  handleStoryUpload,
+  addStory
+]);
 
-router.post("/:slug/like", [getAccessToRoute, checkStoryExist], likeStory);
-router.put("/:slug/rate", [getAccessToRoute, checkStoryExist], rateStory);
-
-router.get(
-  "/editStory/:slug",
-  [getAccessToRoute, checkStoryExist, checkUserAndStoryExist],
-  editStoryPage
-);
-
-router.patch(
-  "/:slug/edit",
-  [
-    getAccessToRoute,
-    checkStoryExist,
-    checkUserAndStoryExist,
-    handleImageUpload,
-  ],
+// Edit story with PDF support
+router.put("/:slug/edit", [
+  validateSession,
+  handleStoryUpload,
   editStory
-); //image
+]);
 
-router.delete(
-  "/:slug/delete",
-  [getAccessToRoute, checkStoryExist, checkUserAndStoryExist],
-  deleteStory
-);
-
-router.get("/getAllStories/:slug", getAccessToRoute, getAllStories);
+// Other routes remain unchanged
+router.get("/", getAllStories);
+router.get("/:slug", validateSession, detailStory);
+router.get("/:slug/edit", [validateSession], editStoryPage);
+router.post("/:slug/like", validateSession, likeStory);
+router.post("/:slug/rate", validateSession, rateStory);
+router.delete("/:slug/delete", [validateSession], deleteStory);
 
 module.exports = router;

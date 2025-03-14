@@ -1,79 +1,124 @@
 const asyncErrorWrapper = require("express-async-handler");
-// const Comment = require("../Models/comment");
 const Story = require("../Models/story");
 const User = require("../Models/user");
 const deleteImageFile = require("../Helpers/Libraries/deleteImageFile");
-// const {
-//   searchHelper,
-//   paginateHelper,
-// } = require("../Helpers/query/queryHelpers");
+const { createNotification } = require("./notification");
 
 const calculateReadTime = (chapter) => {
   const wordCount = chapter?.trim().split(/\s+/).length;
   return Math.floor(wordCount / 200);
 };
 
-const addStory = async (req, res, next) => {
-  let { title, content, summary, tags, prizePerChapter, free, contentTitles } =
-    req.body;
-  content = JSON.parse(content);
-  tags = JSON.parse(tags);
-  contentTitles = JSON.parse(contentTitles);
-  //only admins are allowed to create stories
-  if (req.user.role !== "admin") {
-    return res.status(401).json({
-      status: "unAuthorized",
-      errorMessage: "you need to have admin access to do this",
-    });
-  }
-
-  const shortContent = content.filter((item) => item.length < 100);
-  if (shortContent.length > 0) {
-    console.error(
-      `Content must be at least 100 characters.`,
-      shortContent
-    );
-    res.status(400).json({
-      success: false,
-      errorMessage: "Each chapter must be at least 100 characters.",
-    });
-  }
-  // Ensure content is an array of chapters (strings)
-  if (!Array.isArray(content)) {
-    return res.status(400).json({
-      success: false,
-      errorMessage: "Content must be an array of chapters",
-    });
-  }
-
-  // Calculate readtime based on word count
-  let readtime = content.map((chapter) => calculateReadTime(chapter));
+// Updated to handle PDF uploads
+const addStory = async (req, res) => {
   try {
+    let { title, summary, tags, prizePerChapter, free, contentTitles } = req.body;
+    
+    // Process JSON fields that may be sent as strings
+    tags = typeof tags === 'string' ? JSON.parse(tags) : (tags || []);
+    contentTitles = req.pdfData?.contentTitles || 
+                   (typeof contentTitles === 'string' ? JSON.parse(contentTitles) : (contentTitles || []));
+                  
+    // Only admins are allowed to create stories
+    if (req.user.role !== "admin") {
+      return res.status(401).json({
+        status: "unauthorized",
+        errorMessage: "You need to have admin access to do this",
+      });
+    }
+    
+    // Check if PDF was processed
+    if (!req.pdfData && !req.body.content) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "No PDF file or content provided",
+      });
+    }
+    
+    // Use PDF data if available, otherwise use provided content
+    let content = req.pdfData?.content || [];
+    if (req.body.content && !req.pdfData) {
+      content = typeof req.body.content === 'string' ? 
+        JSON.parse(req.body.content) : req.body.content;
+    }
+    
+    // Ensure content is an array of chapters
+    if (!Array.isArray(content)) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Content must be an array of chapters",
+      });
+    }
+    
+    // Validate chapter content
+    const shortContent = content.filter(item => item.length < 100);
+    if (shortContent.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "Each chapter must be at least 100 characters",
+      });
+    }
+    
+    // Use calculated read times or calculate based on content
+    const readTime = req.pdfData?.readTimes || content.map(chapter => {
+      const wordCount = chapter?.trim().split(/\s+/).length;
+      return Math.floor(wordCount / 200);
+    });
+    
+    // Create the story
     const newStory = await Story.create({
       title,
       content,
       author: req.user._id,
       image: req.fileLink || "https://i.ibb.co/Jx8zhtr/story.jpg",
-      readTime: readtime,
+      readTime,
       tags,
       summary,
       prizePerChapter,
       free,
-      contentTitles: contentTitles.length > 0 ? contentTitles : [],
+      contentTitles: contentTitles.length > 0 ? contentTitles : 
+                    Array.from({ length: content.length }, (_, i) => `Chapter ${i + 1}`),
       contentCount: content.length,
     });
-
-    // Send a success response with the newStory data
+    
+    // Send notification to all users with the "books" preference
+    // const users = await User.find({
+    //   'notificationSettings.books': true
+    // });
+    
+    // // Send notifications to interested users
+    // const notificationPromises = users.map(user => 
+    //   createNotification(
+    //     user._id,
+    //     "STORY_UPDATE",
+    //     "New Story Published",
+    //     `${title} - A new story is now available!`,
+    //     {
+    //       storyId: newStory._id,
+    //       slug: newStory.slug,
+    //       image: newStory.image,
+    //       route: "book_detail",
+    //       params: { slug: newStory.slug }
+    //     }
+    //   )
+    // );
+    
+    // // Don't await notifications to speed up response
+    // Promise.allSettled(notificationPromises).catch(err => 
+    //   console.error("Failed to send notifications:", err)
+    // );
+    
+    // Send success response
     return res.status(200).json({
       success: true,
-      message: "Add story successfully",
+      message: "Story added successfully",
       data: newStory,
     });
   } catch (error) {
-    console.log(error);
+    console.error(error);
     res.status(500).json({
       status: "failed",
-      errorMessage: error,
+      errorMessage: error.message || "Internal server error",
     });
   }
 };
@@ -648,98 +693,99 @@ const editStoryPage = asyncErrorWrapper(async (req, res, next) => {
   });
 });
 
+// Updated to handle PDF uploads for edits
 const editStory = async (req, res) => {
-  try{
-
+  try {
     const { slug } = req.params;
-    let { title, content, partial, contentTitles, chapter, tags, summary } =
-    req.body;
-  // console.log(
-  //   title,
-  //   "content: ", content,
-  //   "partial: ", partial,
-  //   "chapter: ", chapter,
-  //   "tags: ", tags,
-  //   "contentTitles: ",
-  //   contentTitles
-  // );
-  content = JSON.parse(content);
-  contentTitles = JSON.parse(contentTitles);
-  chapter = chapter ? JSON.parse(chapter) : chapter;
-  if (req.user.role !== "admin") {
-    return res.status(401).json({
-      errorMessage: "you are not allowed to do this",
+    let { title, summary, tags, contentTitles } = req.body;
+    
+    if (req.user.role !== "admin") {
+      return res.status(401).json({
+        errorMessage: "You are not allowed to do this",
+      });
+    }
+    
+    const story = await Story.findOne({ slug });
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: "Story not found",
+      });
+    }
+    
+    // Process JSON fields
+    tags = typeof tags === 'string' ? JSON.parse(tags) : (tags || story.tags);
+    contentTitles = req.pdfData?.contentTitles ||
+                   (typeof contentTitles === 'string' ? JSON.parse(contentTitles) : contentTitles);
+    
+    // Update story basic info
+    const previousImage = story.image;
+    story.title = title || story.title;
+    story.summary = summary || story.summary;
+    story.tags = tags;
+    story.image = req.fileLink || previousImage;
+    
+    // Handle image replacement
+    if (req.fileLink && previousImage && previousImage !== "https://i.ibb.co/Jx8zhtr/story.jpg") {
+      deleteImageFile(req, previousImage);
+    }
+    
+    // If PDF uploaded, replace all content
+    if (req.pdfData) {
+      story.content = req.pdfData.content;
+      story.contentCount = req.pdfData.contentCount;
+      story.readTime = req.pdfData.readTimes;
+      story.contentTitles = contentTitles || req.pdfData.contentTitles;
+      story.markModified("content");
+      story.markModified("readTime");
+      story.markModified("contentTitles");
+    } else if (!req.pdfData && contentTitles) {
+      // If only contentTitles updated
+      story.contentTitles = contentTitles;
+      story.markModified("contentTitles");
+    }
+    
+    await story.save();
+    
+    // Notify users about the story update
+    const followers = await User.find({
+      likes: story._id,
+      'notificationSettings.books': true
     });
-  }
-  const shortContent = content.filter((item) => item.length < 100);
-  if (shortContent.length > 0 && chapter.length > 0) {
-    console.error(
-      `Content must be at least 100 characters.`,
-      shortContent
+    
+    // Send notifications to followers
+    const notificationPromises = followers.map(user => 
+      createNotification(
+        user._id,
+        "STORY_UPDATE",
+        "Story Updated",
+        `${story.title} has been updated!`,
+        {
+          storyId: story._id,
+          slug: story.slug,
+          image: story.image,
+          route: "book_detail",
+          params: { slug: story.slug }
+        }
+      )
     );
-    return res.status(400).json({
-      success: false,
-      errorMessage: "Each chapter must be at least 100 characters.",
+    
+    // Don't await notifications to speed up response
+    Promise.allSettled(notificationPromises).catch(err => 
+      console.error("Failed to send update notifications:", err)
+    );
+    
+    return res.status(200).json({
+      success: true,
+      data: story,
     });
-  }
-  const story = await Story.findOne({ slug: slug });
-
-  if (!story) {
-    return res.status(404).json({
-      success: false,
-      message: "Story not found",
-    });
-  }
-  const previousImage = story.image;
-  story.title = title || story.title;
-  story.contentTitles = contentTitles || story.contentTitles;
-  story.tags = tags ? JSON.parse(tags) : story.tags;
-  story.summary = summary || story.summary;
-  story.image = req.fileLink;
-
-  if (!req.fileLink) {
-    story.image = previousImage;
-  } else {
-    // if the image sent, delete the old image
-    deleteImageFile(req, previousImage);
-  }
-
-  // Update content based on whether it is partial or full
-  if (partial == true && Array.isArray(chapter) && chapter.length > 0 && content) {
-    // Update specific chapters
-    chapter.forEach((index, i) => {
-      if (index >= 0 && index < story.content.length) {
-        // If the index exists in the story content, replace the content at that index
-        story.content[index] = content[i];
-      } else {
-        // If the index does not exist, push the new content
-        story.content.push(content[i]);
-      }
-    });
-
-    story.markModified("content");
-  } else if(partial == false) {
-    // If not partial, overwrite the entire content
-    story.content = [...content];
-    story.contentCount = content.length;
-    // console.log("story.content: ", story.content);
-    story.markModified("content");
-  }
-
-  // console.log("content", content, "partial: ", partial);
-
-  await story.save();
-
-  return res.status(200).json({
-    success: true,
-    data: story,
-  });
-  }catch(err){
+  } catch (error) {
+    console.error(error);
     res.status(500).json({
       success: false,
-      errorMessage: error
-    })
-}
+      errorMessage: error.message || "Internal server error"
+    });
+  }
 };
 
 const deleteStory = asyncErrorWrapper(async (req, res, next) => {

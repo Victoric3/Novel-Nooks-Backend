@@ -438,7 +438,6 @@ const googleSignIn = async (req, res) => {
   try {
     // console.log("called google signin")
     const { idToken, deviceInfo, ipAddress } = req.body;
-    console.log("idToken: ", idToken)
     
     // Verify Google token
     const ticket = await client.verifyIdToken({
