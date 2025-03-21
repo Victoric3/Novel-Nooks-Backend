@@ -14,7 +14,7 @@ const userPreferences = require("./userPreference");
 
 router.use("/userPreferences", userPreferences);
 router.use("/notification", notification);
-router.use("/story", storyRoute);
+router.use("/ebook", storyRoute);
 router.use("/search", searchSuggestionsRoute);
 router.use("/user", userRoute);
 router.use("/call", scheduleCallRoute);

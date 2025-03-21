@@ -11,8 +11,15 @@ const {
   resendVerificationToken,
   unUsualSignIn,
   googleSignIn,
-  verificationRateLimit
+  verificationRateLimit,
 } = require("../Controllers/auth");
+
+const {
+  addStoryToReadList,
+  readListPage,
+  checkStoryInReadList,
+  getLikedStoriesPage
+} = require("../Controllers/user");
 
 const { anonymousRateLimit, getAnonymousSession } = require("../Helpers/auth/anonymousHelper");
 
@@ -35,6 +42,14 @@ router.post("/forgotpassword", forgotpassword);
 router.put("/resetpassword", resetpassword);
 
 router.get("/private", validateSession, getPrivateData);
+
+router.post("/:ebookId/addStoryToReadList", validateSession, addStoryToReadList)
+
+router.get("/readList", validateSession, readListPage)
+
+router.get("/readList/check/:ebookId", validateSession, checkStoryInReadList);
+
+router.get("/favorites", validateSession, getLikedStoriesPage);
 
 
 module.exports = router;

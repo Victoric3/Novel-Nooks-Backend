@@ -103,6 +103,10 @@ const StorySchema = new mongoose.Schema(
       type: Number,
       default: 5,
     },
+    completed: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true }
 );

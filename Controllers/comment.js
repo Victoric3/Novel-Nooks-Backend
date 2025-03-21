@@ -1,68 +1,83 @@
-const asyncErrorWrapper = require("express-async-handler");
 const Story = require("../Models/story");
 const Comment = require("../Models/comment");
-const mongoose = require("mongoose");
 
-const addNewCommentToStory = asyncErrorWrapper(async (req, res, next) => {
-  const { slug } = req.params;
+const addNewCommentToStory = async (req, res, next) => {
+  try {
+    const { storyid } = req.params; // Changed from slug to storyid
+    const { content, parentCommentId } = req.body; // Removed star field
+    console.log("Adding new comment to story:", storyid, content, parentCommentId);
+    // Find by ID instead of slug
+    const story = await Story.findById(storyid);
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: "Story not found"
+      });
+    }
 
-  const { content, parentCommentId, taggedReply } = req.body;
-  console.log("parentCommentId: ", parentCommentId)
+    const parentComment = parentCommentId
+      ? await Comment.findById(parentCommentId)
+      : null;
 
-  const story = await Story.findOne({ slug: slug });
+    const comment = await Comment.create({
+      story: story._id,
+      content: content,
+      author: {
+        _id: req.user.id,
+        username: req.user.username,
+        photo: req.user.photo
+      },
+      // star field removed as ratings are handled separately
+      parentComment: parentComment
+    });
 
-  const parentComment = parentCommentId
-    ? await Comment.findById(parentCommentId)
-    : null;
+    if (parentComment) {
+      // If it's a reply, associate the comment with the parent comment
+      parentComment.replies.push(comment._id);
+      await parentComment.save();
+    } else {
+      // If it's a top-level comment, associate it with the story
+      story.comments.push(comment._id);
+      await story.save();
+    }
 
-  const comment = await Comment.create({
-    story: story._id,
-    content: content,
-    author: {
-      _id: req.user.id,
-      username: req.user.username,
-      photo: req.user.photo,
-    },
-    parentComment: parentComment,
-    taggedReply,
-  });
-
-  if (parentComment) {
-    // If it's a reply, associate the comment with the parent comment
-    parentComment.replies.push(comment._id);
-    await parentComment.save();
-  } else {
-    // If it's a top-level comment, associate it with the story
-    story.comments.push(comment._id);
-    await story.save();
+    return res.status(200).json({
+      success: true,
+      data: comment
+    });
+  } catch (error) {
+    console.error("Error in addNewCommentToStory:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to add comment",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
-
-  return res.status(200).json({
-    success: true,
-    data: comment,
-    story: story,
-  });
-});
+};
 
 const getRepliesForComment = async (req, res) => {
+  console.log("Fetching replies for comment:", req.params.commentId);
   try {
     const page = parseInt(req.query.page) || 1;
-    const pageSize = 15;
+    const pageSize = parseInt(req.query.pageSize) || 3; // Accept pageSize from request
     const { commentId } = req.params;
-    // Find the comment by its ID
-    const parentComment = await Comment.findById(commentId);
+    
+    // Rest of the function remains the same
+    const parentComment = await Comment.findById(commentId).lean();
 
     if (!parentComment) {
-      // Handle the case where the parent comment is not found
-      return res
-        .status(404)
-        .json({ message: `Parent comment with ID ${commentId} not found.` });
+      return res.status(404).json({
+        success: false,
+        message: `Parent comment with ID ${commentId} not found.`
+      });
     }
-    const maxPages = parentComment.replies.length / pageSize;
-    if (page - 1 > maxPages) {
-      return res
-        .status(404)
-        .json({ success: false, errorMessage: "max pages exceeded" });
+
+    const maxPages = Math.ceil((parentComment.replies?.length || 0) / pageSize);
+    if (page > maxPages && maxPages > 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Max pages exceeded'
+      });
     }
 
     // Fetch the replies using the IDs stored in the parent comment's 'replies' array
@@ -70,115 +85,234 @@ const getRepliesForComment = async (req, res) => {
     const replies = await Comment.find({ _id: { $in: replyIds } })
       .sort({ createdAt: -1, _id: 1 })
       .skip((page - 1) * pageSize)
-      .limit(pageSize);
-    if (replies.length > 0) {
-      res.status(200).json({ replies });
-    } else {
-      res.status(201).json({});
-    }
+      .limit(pageSize)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: replies,
+      pagination: {
+        currentPage: page,
+        totalPages: maxPages,
+        totalReplies: replyIds.length
+      }
+    });
   } catch (error) {
-    console.error("Error fetching replies:", error);
-    throw error; // Propagate the error to the calling function
+    console.error('Error fetching replies:', error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch replies",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
   }
 };
 
-const getAllCommentByStory = asyncErrorWrapper(async (req, res, next) => {
-  console.log("hit getAllCommentByStory route");
-  const { slug } = req.params;
-  const page = parseInt(req.query.page) || 1;
-  const pageSize = 10;
+const getAllCommentByStory = async (req, res, next) => {
+  try {
+    const { storyid } = req.params; // Changed from slug to storyid
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = 15;
 
-  const story = await Story.findOne({ slug: slug });
-  if (!story) {
-    res.status(404).json({
-      success: "false",
-      errorMessage: "story not found",
+    // Find by ID instead of slug
+    const story = await Story.findById(storyid).lean();
+    if (!story) {
+      return res.status(404).json({
+        success: false,
+        message: 'Story not found'
+      });
+    }
+
+    const totalCommentCount = await Comment.countDocuments({
+      story: story._id
+    });
+    
+    const maxPages = Math.ceil(totalCommentCount / pageSize);
+    if (page > maxPages && maxPages > 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Max pages exceeded'
+      });
+    }
+
+    const commentList = await Comment.find({
+      story: story._id,
+      parentComment: null
+    })
+      .sort({ createdAt: -1, _id: 1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: totalCommentCount,
+      data: commentList,
+      pagination: {
+        currentPage: page,
+        totalPages: maxPages
+      }
+    });
+  } catch (error) {
+    console.error("Error in getAllCommentByStory:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch comments",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
     });
   }
-  const maxPages = Math.ceil(story.comments.length / pageSize);
-  if (page - 1 > maxPages) {
-    return res
-      .status(404)
-      .json({ success: false, errorMessage: "max pages exceeded" });
-  }
-  const commentList = await Comment.find({
-    story: story._id,
-    parentComment: null,
-  })
-    .populate("replies author")
-    .populate({
-      path: "replies",
-      populate: {
-        path: "parentComment",
-        select: "_id",
-        populate: {
-          path: "author",
-          select: "username",
+};
+
+const commentLike = async (req, res, next) => {
+  const { commentId } = req.params;
+  const userId = req.user._id;
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
+  console.log("Liking comment:", commentId, userId);
+  async function attemptUpdate() {
+    try {
+      // Use lean() for faster query and only select what's needed
+      const comment = await Comment.findById(commentId)
+        .select("likes likeCount __v")
+        .lean();
+
+      if (!comment) {
+        return res.status(404).json({
+          success: false,
+          message: "Comment not found"
+        });
+      }
+
+      // Check if user has already liked the comment
+      const hasLiked = comment.likes.some(
+        (id) => id.toString() === userId.toString()
+      );
+
+      // Use findOneAndUpdate with version key check
+      const updatedComment = await Comment.findOneAndUpdate(
+        {
+          _id: commentId,
+          __v: comment.__v // Version check
         },
-      },
-    })
-    .sort({ createdAt: -1, _id: 1 })
-    .skip((page - 1) * pageSize)
-    .limit(pageSize)
-    .lean();
+        [
+          {
+            $set: {
+              likes: {
+                $cond: {
+                  if: { $eq: [hasLiked, true] },
+                  then: {
+                    $filter: {
+                      input: "$likes",
+                      cond: { $ne: ["$$this", userId] },
+                    }
+                  },
+                  else: {
+                    // Ensure we don't add duplicate likes
+                    $cond: {
+                      if: { $in: [userId, "$likes"] },
+                      then: "$likes",
+                      else: { $concatArrays: ["$likes", [userId]] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            $set: {
+              likeCount: { $size: "$likes" },
+              __v: { $add: ["$__v", 1] } // Increment version
+            }
+          }
+        ],
+        {
+          new: true,
+          runValidators: true
+        }
+      )
+        .select("likeCount likes")
+        .lean();
 
-  const totalCommentCount = await Comment.countDocuments({
-    story: story._id,
-  });
+      if (!updatedComment && retryCount < MAX_RETRIES) {
+        retryCount++;
+        return await attemptUpdate();
+      }
 
-  return res.status(200).json({
-    success: true,
-    count: totalCommentCount,
-    page,
-    maxPages,
-    data: commentList,
-  });
-});
+      if (!updatedComment) {
+        return res.status(409).json({
+          success: false,
+          message: "Concurrent update detected. Please try again."
+        });
+      }
 
-const commentLike = asyncErrorWrapper(async (req, res, next) => {
-  const { activeUser } = req.body;
-  const { comment_id } = req.params;
+      // Determine the CURRENT like status after the update
+      const currentLikeStatus = updatedComment.likes.some(
+        id => id.toString() === userId.toString()
+      );
 
-  const comment = await Comment.findById(comment_id);
+      return res.status(200).json({
+        success: true,
+        data: {
+          _id: updatedComment._id,
+          likeCount: updatedComment.likeCount
+        },
+        likeStatus: currentLikeStatus
+      });
+    } catch (error) {
+      if (error.name === "VersionError" && retryCount < MAX_RETRIES) {
+        retryCount++;
+        return await attemptUpdate();
+      }
 
-  if (!comment.likes.includes(activeUser._id)) {
-    comment.likes.push(activeUser._id);
-    comment.likeCount = comment.likes.length;
-
-    await comment.save();
-  } else {
-    const index = comment.likes.indexOf(activeUser._id);
-    comment.likes.splice(index, 1);
-    comment.likeCount = comment.likes.length;
-    await comment.save();
+      console.error("Error in commentLike:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+        error: process.env.NODE_ENV === "development" ? error.message : undefined
+      });
+    }
   }
 
-  const likeStatus = comment.likes.includes(activeUser._id);
+  return attemptUpdate();
+};
 
-  return res.status(200).json({
-    success: true,
-    data: comment,
-    likeStatus: likeStatus,
-  });
-});
+const getCommentLikeStatus = async (req, res, next) => {
+  try {
+    const { commentId } = req.params;
+    const userId = req.user._id;
 
-const getCommentLikeStatus = asyncErrorWrapper(async (req, res, next) => {
-  const { activeUser } = req.body;
-  const { comment_id } = req.params;
+    const comment = await Comment.findById(commentId)
+      .select("likes")
+      .lean();
+      
+    if (!comment) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found"
+      });
+    }
 
-  const comment = await Comment.findById(comment_id);
-  const likeStatus = comment.likes.includes(activeUser._id);
+    const likeStatus = comment.likes.some(
+      (id) => id.toString() === userId.toString()
+    );
 
-  return res.status(200).json({
-    success: true,
-    likeStatus: likeStatus,
-  });
-});
+    return res.status(200).json({
+      success: true,
+      likeStatus: likeStatus
+    });
+  } catch (error) {
+    console.error("Error in getCommentLikeStatus:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to get like status",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
 
 module.exports = {
   addNewCommentToStory,
   getAllCommentByStory,
   commentLike,
   getCommentLikeStatus,
-  getRepliesForComment,
+  getRepliesForComment
 };

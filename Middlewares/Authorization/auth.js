@@ -43,12 +43,9 @@ const getAccessToRoute = async (req, res, next) => {
 const validateSession = async (req, res, next) => {
   try {
     const token = getAccessTokenFromCookies(req);
-    // console.log(token);
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-    // console.log("decoded: ", decoded);
     
     const user = await User.findById(decoded.id);
-    // console.log("user", user);
     
     // Clean up expired sessions first
     await user.cleanupSessions();
@@ -66,6 +63,21 @@ const validateSession = async (req, res, next) => {
     
     if (session) {
       session.lastActive = new Date();
+      
+      // Check if it's time for daily voucher bonus
+      const now = new Date();
+      const lastVoucherTime = user.lastVoucherTime || new Date(0);
+      const hoursSinceLastVoucher = (now - lastVoucherTime) / (1000 * 60 * 60);
+      
+      // If more than 24 hours have passed since last voucher bonus
+      if (hoursSinceLastVoucher >= 24) {
+        // Add 10 vouchers
+        user.vouchers += 10;
+        // Update last voucher time
+        user.lastVoucherTime = now;
+        console.log(`Daily bonus: Added 10 vouchers to user ${user.username}. New total: ${user.vouchers}`);
+      }
+      
       await user.save();
     }
 
@@ -73,9 +85,9 @@ const validateSession = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Session validation error:", error);
-    return res.status(401).json({
+    return res.status(500).json({
       status: "failed", 
-      errorMessage: "Not authorized to access this route"
+      errorMessage: "Network Error"
     });
   }
 };

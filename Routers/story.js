@@ -12,6 +12,8 @@ const {
   editStoryPage,
   editStory,
   deleteStory,
+  getEbooksForUserEndPoint,
+  checkStoryUpdates
 } = require("../Controllers/story");
 
 const router = express.Router();
@@ -34,11 +36,16 @@ router.put("/:slug/edit", [
 ]);
 
 // Other routes remain unchanged
-router.get("/", getAllStories);
-router.get("/:slug", validateSession, detailStory);
-router.get("/:slug/edit", [validateSession], editStoryPage);
-router.post("/:slug/like", validateSession, likeStory);
-router.post("/:slug/rate", validateSession, rateStory);
-router.delete("/:slug/delete", [validateSession], deleteStory);
+router.get("/", validateSession, getAllStories);
+router.get("/:id", validateSession, detailStory);
+router.get("/:slug/edit", validateSession, editStoryPage);
+router.post("/:id/like", validateSession, likeStory);
+router.put("/:id/rate", validateSession, rateStory);
+router.delete("/:slug/delete", validateSession, deleteStory);
+
+router.get("/user/get", validateSession, getEbooksForUserEndPoint);
+
+// Add route for checking story updates
+router.get("/:id/check-updates", validateSession, checkStoryUpdates);
 
 module.exports = router;

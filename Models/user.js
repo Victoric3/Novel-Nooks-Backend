@@ -175,6 +175,10 @@ const UserSchema = new mongoose.Schema(
       type: Number,
       default: 0
     },
+    lastVoucherTime: {
+      type: Date,
+      default: null
+    },
     coins: {
       type: Number,
       default: 0

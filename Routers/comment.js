@@ -1,33 +1,29 @@
 const express = require("express");
 
-const { getAccessToRoute } = require("../Middlewares/Authorization/auth");
+const { validateSession } = require("../Middlewares/Authorization/auth");
 
 const {
   addNewCommentToStory,
   getAllCommentByStory,
   commentLike,
   getCommentLikeStatus,
-  getRepliesForComment,
+  getRepliesForComment
 } = require("../Controllers/comment");
-
-const {
-  checkStoryExist,
-} = require("../Middlewares/database/databaseErrorhandler");
 
 const router = express.Router();
 
 router.post(
-  "/:slug/addComment",
-  [getAccessToRoute, checkStoryExist],
+  "/:storyid/addComment",
+  validateSession,
   addNewCommentToStory
 );
 
-router.get("/:slug/getAllComment", getAllCommentByStory);
+router.get("/:storyid/getAllComment", validateSession, getAllCommentByStory);
 
-router.get("/:commentId/replies", getRepliesForComment);
+router.get("/:commentId/replies", validateSession, getRepliesForComment);
 
-router.post("/:comment_id/like", commentLike);
+router.post("/:commentId/like", validateSession, commentLike);
 
-router.post("/:comment_id/getCommentLikeStatus", getCommentLikeStatus);
+router.post("/:commentId/getCommentLikeStatus", validateSession, getCommentLikeStatus);
 
 module.exports = router;

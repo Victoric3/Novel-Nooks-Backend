@@ -74,6 +74,8 @@ const register = async (req, res) => {
         anonymousUser.temporary = false;
         anonymousUser.emailStatus = "pending";
         anonymousUser.passwordHistory = [password];
+        // Add 500 vouchers signup bonus
+        anonymousUser.vouchers = 500;
 
         // Add new IP if not already present
         if (!anonymousUser.ipAddress.includes(ipAddress)) {
@@ -123,7 +125,8 @@ const register = async (req, res) => {
       isAnonymous: false,
       temporary: false,
       emailStatus: "pending",
-      passwordHistory: [password]
+      passwordHistory: [password],
+      vouchers: 500  // Add 500 vouchers signup bonus
     });
 
     newUser.passwordHistory = newUser.passwordHistory || [];
@@ -501,7 +504,8 @@ const googleSignIn = async (req, res) => {
       isAnonymous: false,
       username: await generateUniqueUsername(),
       password: newPassword,
-      passwordHistory: [newPassword]
+      passwordHistory: [newPassword],
+      vouchers: 500  // Add 500 vouchers signup bonus
     });
 
     // Add initial session
