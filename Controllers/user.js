@@ -146,7 +146,7 @@ const readListPage = async (req, res, next) => {
     const searchQuery = req.query.search || "";
     const userId = req.user.id;
 
-    // Get user with readList
+    // Get user with readList and likes
     const user = await User.findById(userId).select('readList readListLength likes').lean();
 
     if (!user) {
@@ -195,12 +195,16 @@ const readListPage = async (req, res, next) => {
       .limit(pageSize)
       .lean();
 
-    // Sort items to match the reversed order in readList
+    // Sort items to match the reversed order in readList and add likeStatus
     const sortedReadList = readListItems.map(story => {
       const indexInReadList = reversedReadList.findIndex(id => id.toString() === story._id.toString());
+      const isLiked = user.likes && user.likes.some(likeId => likeId.toString() === story._id.toString());
+      
       return {
         ...story,
-        _readListIndex: indexInReadList
+        _readListIndex: indexInReadList,
+        likeStatus: isLiked,
+        isInReadingList: true // Always true since these are from the reading list
       };
     })
       .sort((a, b) => a._readListIndex - b._readListIndex)
@@ -247,7 +251,7 @@ const checkStoryInReadList = async (req, res) => {
 
     // Check if story is in readList
     const isInReadList = user.readList && user.readList.some(
-      id => id.toString() === ebookId.toString()  // Changed from storyId to ebookId
+      id => id.toString() === ebookId.toString()
     );
 
     return res.status(200).json({
@@ -321,12 +325,16 @@ const getLikedStoriesPage = async (req, res, next) => {
       .limit(pageSize)
       .lean();
 
-    // Sort items to match the reversed order in likes
+    // Sort items to match the reversed order in likes and add readingList status
     const sortedLikes = likedStories.map(story => {
       const indexInLikes = reversedLikes.findIndex(id => id.toString() === story._id.toString());
+      const isInReadingList = user.readList && user.readList.some(readId => readId.toString() === story._id.toString());
+      
       return {
         ...story,
-        _likeIndex: indexInLikes
+        _likeIndex: indexInLikes,
+        likeStatus: true, // Always true since these are liked stories
+        isInReadingList: isInReadingList
       };
     })
       .sort((a, b) => a._likeIndex - b._likeIndex)
