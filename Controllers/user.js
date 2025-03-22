@@ -168,9 +168,12 @@ const readListPage = async (req, res, next) => {
       });
     }
 
+    // Reverse the readList to get newest to oldest
+    const reversedReadList = user.readList.reverse();
+
     // Create query for finding stories in the reading list
     const query = {
-      _id: { $in: user.readList }
+      _id: { $in: reversedReadList }
     };
 
     // Add search criteria if provided
@@ -192,31 +195,16 @@ const readListPage = async (req, res, next) => {
       .limit(pageSize)
       .lean();
 
-    // Sort items to match the order in readList
+    // Sort items to match the reversed order in readList
     const sortedReadList = readListItems.map(story => {
-      // Get the index in readList for sorting
-      const indexInReadList = user.readList.findIndex(id => id.toString() === story._id.toString());
-
-      // Add likeStatus field (check if in user.likes)
-      const likeStatus = user.likes ? user.likes.some(id => id.toString() === story._id.toString()) : false;
-
-      // Add isInReadingList (always true in this context)
-      const isInReadingList = true;
-
-      // Ensure ratings is an array
-      const ratings = Array.isArray(story.ratings) ? story.ratings : [];
-
+      const indexInReadList = reversedReadList.findIndex(id => id.toString() === story._id.toString());
       return {
         ...story,
-        likeStatus,
-        isInReadingList,
-        ratings,
         _readListIndex: indexInReadList
       };
     })
       .sort((a, b) => a._readListIndex - b._readListIndex)
       .map(story => {
-        // Remove the temporary sorting field
         const { _readListIndex, ...storyWithoutIndex } = story;
         return storyWithoutIndex;
       });
@@ -306,9 +294,12 @@ const getLikedStoriesPage = async (req, res, next) => {
       });
     }
 
+    // Reverse the likes array to get newest to oldest
+    const reversedLikes = user.likes.reverse();
+
     // Create query for finding liked stories
     const query = {
-      _id: { $in: user.likes }
+      _id: { $in: reversedLikes }
     };
 
     // Add search criteria if provided
@@ -330,40 +321,23 @@ const getLikedStoriesPage = async (req, res, next) => {
       .limit(pageSize)
       .lean();
 
-    // Process the results to add interaction fields
-    const processedLikes = likedStories.map(story => {
-      // Get the index in likes for sorting
-      const indexInLikes = user.likes.findIndex(id => id.toString() === story._id.toString());
-
-      // Add likeStatus (always true in this context)
-      const likeStatus = true;
-
-      // Add isInReadingList
-      const isInReadingList = user.readList ?
-        user.readList.some(id => id.toString() === story._id.toString()) :
-        false;
-
-      // Ensure ratings is an array
-      const ratings = Array.isArray(story.ratings) ? story.ratings : [];
-
+    // Sort items to match the reversed order in likes
+    const sortedLikes = likedStories.map(story => {
+      const indexInLikes = reversedLikes.findIndex(id => id.toString() === story._id.toString());
       return {
         ...story,
-        likeStatus,
-        isInReadingList,
-        ratings,
-        _likeIndex: indexInLikes // Temporary field for sorting
+        _likeIndex: indexInLikes
       };
     })
       .sort((a, b) => a._likeIndex - b._likeIndex)
       .map(story => {
-        // Remove the temporary sorting field
         const { _likeIndex, ...storyWithoutIndex } = story;
         return storyWithoutIndex;
       });
 
     return res.status(200).json({
       success: true,
-      data: processedLikes,
+      data: sortedLikes,
       pagination: {
         currentPage: page,
         totalPages: totalPages,

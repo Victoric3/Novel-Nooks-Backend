@@ -11,6 +11,7 @@ const {
   resendVerificationToken,
   unUsualSignIn,
   googleSignIn,
+  changeUserName,
   verificationRateLimit,
 } = require("../Controllers/auth");
 
@@ -38,6 +39,8 @@ router.post("/anonymous", anonymousRateLimit, getAnonymousSession);
 router.post("/login", login);
 
 router.post("/forgotpassword", forgotpassword);
+
+router.post("/changeUserName", validateSession, changeUserName);
 
 router.put("/resetpassword", resetpassword);
 
