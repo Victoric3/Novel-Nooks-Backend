@@ -13,12 +13,12 @@ const util = require('util');
 const addStory = async (req, res) => {
   try {
     let { title, summary, tags, prizePerChapter, free, contentCount, completed } = req.body;
-    
+
     // Process JSON fields that may be sent as strings
     tags = typeof tags === 'string' ? JSON.parse(tags) : (tags || []);
-    contentCount = req.pdfData?.contentCount || 
-                   (typeof contentCount === 'string' ? JSON.parse(contentCount) : (contentCount || []));
-                  
+    contentCount = req.pdfData?.contentCount ||
+      (typeof contentCount === 'string' ? JSON.parse(contentCount) : (contentCount || []));
+
     // Only admins are allowed to create stories
     if (req.user.role !== "admin") {
       return res.status(401).json({
@@ -26,7 +26,7 @@ const addStory = async (req, res) => {
         errorMessage: "You need to have admin access to do this",
       });
     }
-    
+
     // Check if PDF was processed
     if (!req.pdfData && !req.body.content) {
       return res.status(400).json({
@@ -34,17 +34,17 @@ const addStory = async (req, res) => {
         errorMessage: "No PDF file or content provided",
       });
     }
-    
+
     // Use PDF data if available, otherwise use provided content
     let content = req.pdfData?.content || [];
 
-    if(!content || content.length === 0) {
+    if (!content || content.length === 0) {
       return res.status(400).json({
         success: false,
         errorMessage: "Content is empty or not provided",
       });
     }
-    
+
     // Ensure content is an array of chapters
     if (!Array.isArray(content)) {
       return res.status(400).json({
@@ -52,7 +52,7 @@ const addStory = async (req, res) => {
         errorMessage: "Content must be an array of chapters",
       });
     }
-    
+
     // Validate chapter content
     const shortContent = content.filter(item => item.length < 100);
     if (shortContent.length > 0) {
@@ -61,13 +61,13 @@ const addStory = async (req, res) => {
         errorMessage: "Each chapter must be at least 100 characters",
       });
     }
-    
+
     // Use calculated read times or calculate based on content
     const readTime = req.pdfData?.readTimes || content.map(chapter => {
       const wordCount = chapter?.trim().split(/\s+/).length;
       return Math.floor(wordCount / 200);
     });
-    
+
     // Create the story
     const newStory = await Story.create({
       title,
@@ -80,16 +80,16 @@ const addStory = async (req, res) => {
       prizePerChapter,
       free,
       completed: completed ?? true,
-      contentCount: contentCount.length > 0 ? contentCount : 
-                    Array.from({ length: content.length }, (_, i) => `Chapter ${i + 1}`),
+      contentCount: contentCount.length > 0 ? contentCount :
+        Array.from({ length: content.length }, (_, i) => `Chapter ${i + 1}`),
       contentCount: content.length,
     });
-    
+
     // Send notification to all users with the "books" preference
     // const users = await User.find({
     //   'notificationSettings.books': true
     // });
-    
+
     // // Send notifications to interested users
     // const notificationPromises = users.map(user => 
     //   createNotification(
@@ -106,12 +106,12 @@ const addStory = async (req, res) => {
     //     }
     //   )
     // );
-    
+
     // // Don't await notifications to speed up response
     // Promise.allSettled(notificationPromises).catch(err => 
     //   console.error("Failed to send notifications:", err)
     // );
-    
+
     // Send success response
     return res.status(200).json({
       success: true,
@@ -252,15 +252,15 @@ const getAllStories = async (req, res) => {
         : []),
       ...(searchQuery
         ? [
-            {
-              $match: {
-                $or: [
-                  { title: { $regex: new RegExp(searchQuery, "i") } },
-                  { summary: { $regex: new RegExp(searchQuery, "i") } },
-                ],
-              },
+          {
+            $match: {
+              $or: [
+                { title: { $regex: new RegExp(searchQuery, "i") } },
+                { summary: { $regex: new RegExp(searchQuery, "i") } },
+              ],
             },
-          ]
+          },
+        ]
         : []),
       ...(authorUsername
         ? [{ $match: { "authorInfo.username": authorUsername } }]
@@ -268,84 +268,84 @@ const getAllStories = async (req, res) => {
       // Stage 6: Add likeStatus and isInReadingList if user is authenticated
       ...(userId
         ? [
-            {
-              $lookup: {
-                from: "users",
-                let: { storyId: { $toString: "$_id" } },
-                pipeline: [
-                  { $match: { _id: userId } },
-                  { 
-                    $project: { 
-                      _id: 0,
-                      // Check if likes array exists and contains story ID
-                      hasLiked: {
-                        $cond: {
-                          if: { $isArray: "$likes" },
-                          then: {
-                            $in: [
-                              "$$storyId",
-                              { $map: { input: "$likes", as: "id", in: { $toString: "$$id" } } }
-                            ]
-                          },
-                          else: false
-                        }
-                      },
-                      // Check if readList array exists and contains story ID
-                      isInReadingList: {
-                        $cond: {
-                          if: { $isArray: "$readList" },
-                          then: {
-                            $in: [
-                              "$$storyId",
-                              { $map: { input: "$readList", as: "id", in: { $toString: "$$id" } } }
-                            ]
-                          },
-                          else: false
-                        }
+          {
+            $lookup: {
+              from: "users",
+              let: { storyId: { $toString: "$_id" } },
+              pipeline: [
+                { $match: { _id: userId } },
+                {
+                  $project: {
+                    _id: 0,
+                    // Check if likes array exists and contains story ID
+                    hasLiked: {
+                      $cond: {
+                        if: { $isArray: "$likes" },
+                        then: {
+                          $in: [
+                            "$$storyId",
+                            { $map: { input: "$likes", as: "id", in: { $toString: "$$id" } } }
+                          ]
+                        },
+                        else: false
+                      }
+                    },
+                    // Check if readList array exists and contains story ID
+                    isInReadingList: {
+                      $cond: {
+                        if: { $isArray: "$readList" },
+                        then: {
+                          $in: [
+                            "$$storyId",
+                            { $map: { input: "$readList", as: "id", in: { $toString: "$$id" } } }
+                          ]
+                        },
+                        else: false
                       }
                     }
                   }
-                ],
-                as: "userInteraction"
-              }
-            },
-            {
-              $addFields: {
-                // Handle case where no user document was found
-                userInteraction: { 
-                  $cond: {
-                    if: { $gt: [{ $size: "$userInteraction" }, 0] },
-                    then: { $arrayElemAt: ["$userInteraction", 0] },
-                    else: { hasLiked: false, isInReadingList: false }
-                  }
+                }
+              ],
+              as: "userInteraction"
+            }
+          },
+          {
+            $addFields: {
+              // Handle case where no user document was found
+              userInteraction: {
+                $cond: {
+                  if: { $gt: [{ $size: "$userInteraction" }, 0] },
+                  then: { $arrayElemAt: ["$userInteraction", 0] },
+                  else: { hasLiked: false, isInReadingList: false }
                 }
               }
-            },
-            {
-              $addFields: {
-                likeStatus: { $ifNull: ["$userInteraction.hasLiked", false] },
-                isInReadingList: { $ifNull: ["$userInteraction.isInReadingList", false] }
-              }
-            },
-            {
-              $project: {
-                userInteraction: 0
-              }
             }
-          ]
+          },
+          {
+            $addFields: {
+              likeStatus: { $ifNull: ["$userInteraction.hasLiked", false] },
+              isInReadingList: { $ifNull: ["$userInteraction.isInReadingList", false] }
+            }
+          },
+          {
+            $project: {
+              userInteraction: 0
+            }
+          }
+        ]
         : [
-            {
-              $addFields: {
-                likeStatus: false,
-                isInReadingList: false
-              }
+          {
+            $addFields: {
+              likeStatus: false,
+              isInReadingList: false
             }
-          ]),
+          }
+        ]),
       // Stage 7: Apply sorting
       ...(section && sectionSortMap[section]
         ? [{ $sort: { [sectionSortMap[section]]: -1 } }]
         : section === "recommended" && userId
-        ? [
+          ? [
             // Recommended: Boost stories matching user's preferred tags
             {
               $lookup: {
@@ -363,7 +363,7 @@ const getAllStories = async (req, res) => {
               $addFields: {
                 tagMatchCount: {
                   $cond: {
-                    if: { 
+                    if: {
                       $and: [
                         { $isArray: "$tags" },
                         { $isArray: "$userData.preferredTags" }
@@ -377,38 +377,38 @@ const getAllStories = async (req, res) => {
             },
             { $sort: { tagMatchCount: -1, rankPoints: -1 } },
           ]
-        : specific && slug === "recent"
-        ? [{ $sort: { createdAt: -1 } }]
-        : specific
-        ? [{ $match: { tags: slug } }, { $sort: { rankPoints: -1 } }]
-        : slug
-        ? [
-            {
-              $addFields: {
-                rankPoints: {
-                  $add: [
-                    "$rankPoints",
-                    {
-                      $multiply: [
-                        // Replace this problematic section
-                        {
-                          $size: { 
-                            $ifNull: [
-                              { $setIntersection: ["$tags", slug.split("+").filter(Boolean)] },
-                              []
-                            ]
-                          }
-                        },
-                        1000,
-                      ],
+          : specific && slug === "recent"
+            ? [{ $sort: { createdAt: -1 } }]
+            : specific
+              ? [{ $match: { tags: slug } }, { $sort: { rankPoints: -1 } }]
+              : slug
+                ? [
+                  {
+                    $addFields: {
+                      rankPoints: {
+                        $add: [
+                          "$rankPoints",
+                          {
+                            $multiply: [
+                              // Replace this problematic section
+                              {
+                                $size: {
+                                  $ifNull: [
+                                    { $setIntersection: ["$tags", slug.split("+").filter(Boolean)] },
+                                    []
+                                  ]
+                                }
+                              },
+                              1000,
+                            ],
+                          },
+                        ],
+                      },
                     },
-                  ],
-                },
-              },
-            },
-            { $sort: { rankPoints: -1 } },
-          ]
-        : [{ $sort: { rankPoints: -1 } }]),
+                  },
+                  { $sort: { rankPoints: -1 } },
+                ]
+                : [{ $sort: { rankPoints: -1 } }]),
       // Stage 8: Pagination with $facet
       {
         $facet: {
@@ -522,15 +522,15 @@ const detailStory = async (req, res) => {
       // Calculate total cost for non-free chapters after index 4 (first 5 are free)
       const nonFreeChapters = story.content.length - 5;
       const totalCost = nonFreeChapters > 0 ? story.prizePerChapter * nonFreeChapters : 0;
-      
+
       // Check if user has purchased any chapters
-      const purchasedChapters = 
+      const purchasedChapters =
         user.purchased.find(item => item.slug === story.slug)?.chapter || [];
-      
+
       if (user.vouchers >= totalCost) {
         // User can afford the entire book
         chaptersToInclude = story.content.map((_, index) => index);
-        
+
         // Deduct vouchers for unpurchased chapters beyond the free tier
         const chaptersToPurchase = [];
         for (let i = 5; i < story.content.length; i++) {
@@ -538,11 +538,11 @@ const detailStory = async (req, res) => {
             chaptersToPurchase.push(i);
           }
         }
-        
+
         if (chaptersToPurchase.length > 0) {
           // Deduct vouchers
           user.vouchers -= story.prizePerChapter * chaptersToPurchase.length;
-          
+
           // Update purchased chapters
           if (purchasedChapters.length > 0) {
             user.purchased = user.purchased.map(item => {
@@ -560,7 +560,7 @@ const detailStory = async (req, res) => {
               chapter: chaptersToPurchase
             });
           }
-          
+
           await user.save();
         }
       } else {
@@ -603,14 +603,14 @@ const detailStory = async (req, res) => {
     const epubChapters = chaptersToInclude.map(index => {
       const chapterTitle = story.contentTitles[index] || `Chapter ${index + 1}`;
       const chapterContent = story.content[index] || "Content not available";
-      
+
       // Split the content into paragraphs
       const paragraphs = chapterContent.split('\n\n').filter(p => p.trim() !== '');
-      
+
       // Extract the first paragraph as subtitle if it exists
       const subtitle = paragraphs.length > 0 ? paragraphs[0] : '';
       const remainingParagraphs = paragraphs.length > 1 ? paragraphs.slice(1) : [];
-      
+
       // Format each chapter with HTML to control page breaks and styling
       return {
         title: chapterTitle,
@@ -654,7 +654,7 @@ const detailStory = async (req, res) => {
       if (err) {
         console.error("Error sending EPUB file:", err);
       }
-      
+
       // Clean up the temporary file
       try {
         fs.unlinkSync(epubFilePath);
@@ -665,7 +665,7 @@ const detailStory = async (req, res) => {
 
   } catch (error) {
     console.error("Error in detailStory:", error);
-    
+
     // Clean up in case of error
     try {
       if (fs.existsSync(epubFilePath)) {
@@ -674,7 +674,7 @@ const detailStory = async (req, res) => {
     } catch (unlinkError) {
       console.error("Error deleting temporary EPUB after error:", unlinkError);
     }
-    
+
     return res.status(500).json({
       success: false,
       errorMessage: `Internal server error: ${error.message}`,
@@ -948,13 +948,13 @@ const editStory = async (req, res) => {
   try {
     const { slug } = req.params;
     let { title, summary, tags, contentCount } = req.body;
-    
+
     if (req.user.role !== "admin") {
       return res.status(401).json({
         errorMessage: "You are not allowed to do this",
       });
     }
-    
+
     const story = await Story.findOne({ slug });
     if (!story) {
       return res.status(404).json({
@@ -962,24 +962,24 @@ const editStory = async (req, res) => {
         message: "Story not found",
       });
     }
-    
+
     // Process JSON fields
     tags = typeof tags === 'string' ? JSON.parse(tags) : (tags || story.tags);
     contentCount = req.pdfData?.contentCount ||
-                   (typeof contentCount === 'string' ? JSON.parse(contentCount) : contentCount);
-    
+      (typeof contentCount === 'string' ? JSON.parse(contentCount) : contentCount);
+
     // Update story basic info
     const previousImage = story.image;
     story.title = title || story.title;
     story.summary = summary || story.summary;
     story.tags = tags;
     story.image = req.fileLink || previousImage;
-    
+
     // Handle image replacement
     if (req.fileLink && previousImage && previousImage !== "https://i.ibb.co/Jx8zhtr/story.jpg") {
       deleteImageFile(req, previousImage);
     }
-    
+
     // If PDF uploaded, replace all content
     if (req.pdfData) {
       story.content = req.pdfData.content;
@@ -994,17 +994,17 @@ const editStory = async (req, res) => {
       story.contentCount = contentCount;
       story.markModified("contentCount");
     }
-    
+
     await story.save();
-    
+
     // Notify users about the story update
     const followers = await User.find({
       likes: story._id,
       'notificationSettings.books': true
     });
-    
+
     // Send notifications to followers
-    const notificationPromises = followers.map(user => 
+    const notificationPromises = followers.map(user =>
       createNotification(
         user._id,
         "STORY_UPDATE",
@@ -1019,12 +1019,12 @@ const editStory = async (req, res) => {
         }
       )
     );
-    
+
     // Don't await notifications to speed up response
-    Promise.allSettled(notificationPromises).catch(err => 
+    Promise.allSettled(notificationPromises).catch(err =>
       console.error("Failed to send update notifications:", err)
     );
-    
+
     return res.status(200).json({
       success: true,
       data: story,
@@ -1057,10 +1057,10 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
   try {
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
-    
+
     // Start building the query
     let query = { author: userId };
-    
+
     // Apply search query if provided
     if (searchQuery) {
       query.$or = [
@@ -1068,7 +1068,7 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
         { description: { $regex: searchQuery, $options: 'i' } }
       ];
     }
-    
+
     // Apply filters based on filterBy parameter
     if (filterBy) {
       switch (filterBy) {
@@ -1088,7 +1088,7 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
 
     // Determine sort order (default: newest first)
     const sortOptions = { createdAt: -1 };
-    
+
     // Find stories for the user with filters and pagination
     // Only select necessary fields to reduce payload size
     const stories = await Story.find(query)
@@ -1116,7 +1116,7 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
     const totalPages = Math.ceil(total / limit);
 
     console.log(`Found ${stories.length} ebooks for user with filter: ${filterBy}`);
-    
+
     return {
       ebooks: stories,
       pagination: {
@@ -1164,19 +1164,19 @@ const checkStoryUpdates = async (req, res) => {
     const { id } = req.params;
     const lastKnownContentCount = parseInt(req.query.lastContentCount) || 0;
     const lastCheckDate = req.query.lastCheckDate ? new Date(req.query.lastCheckDate) : null;
-    
+
     // Fetch story with minimal fields needed
     const story = await Story.findById(id)
       .select('title contentCount content contentTitles updatedAt completed')
       .lean();
-    
+
     if (!story) {
       return res.status(404).json({
         success: false,
         message: "Story not found"
       });
     }
-    
+
     // Check if the story is already completed
     if (story.completed) {
       return res.status(200).json({
@@ -1186,17 +1186,17 @@ const checkStoryUpdates = async (req, res) => {
         message: "This story is already complete"
       });
     }
-    
+
     // Check if there are content updates based on count
     const hasNewChapters = story.contentCount > lastKnownContentCount;
-    
+
     // Check if the story was updated after the last check date
-    const wasUpdatedAfterLastCheck = lastCheckDate ? 
+    const wasUpdatedAfterLastCheck = lastCheckDate ?
       new Date(story.updatedAt) > new Date(lastCheckDate) : false;
-    
+
     // Calculate the number of new chapters
     const newChaptersCount = Math.max(0, story.contentCount - lastKnownContentCount);
-    
+
     // Get titles of new chapters if there are any
     let newChapterDetails = [];
     if (hasNewChapters && story.contentTitles && story.content) {
@@ -1210,7 +1210,7 @@ const checkStoryUpdates = async (req, res) => {
         }
       }
     }
-    
+
     return res.status(200).json({
       success: true,
       hasUpdates: hasNewChapters || wasUpdatedAfterLastCheck,
@@ -1222,7 +1222,7 @@ const checkStoryUpdates = async (req, res) => {
       storyTitle: story.title,
       isComplete: story.completed
     });
-    
+
   } catch (error) {
     console.error("Error in checkStoryUpdates:", error);
     return res.status(500).json({
