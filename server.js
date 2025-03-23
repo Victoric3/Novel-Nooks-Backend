@@ -1,3 +1,8 @@
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
+
 const routes = require('./Routers');
 const express = require("express")
 const cookieParser = require('cookie-parser');
@@ -55,7 +60,7 @@ const server = app.listen(PORT, () => {
 })
 
 process.on("unhandledRejection",(err , promise) =>{
-    console.log(`Logged Error : ${err}`)
-
+    console.error(`Unhandled Rejection: ${err.message}`);
+    console.error(err.stack);
     server.close(()=>process.exit(1))
 })

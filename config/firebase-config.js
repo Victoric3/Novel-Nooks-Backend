@@ -6,37 +6,44 @@ dotenv.config({ path: './config.env' });
 
 function initializeFirebase() {
   try {
-    // Check if we have the Firebase service account in environment variables
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      // Parse the JSON string
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-      });
-      
-      console.log('Firebase initialized successfully with service account');
-      return admin;
-    } 
-    // Fallback to application default credentials if available
-    else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      admin.initializeApp({
-        credential: admin.credential.applicationDefault()
-      });
-      
-      console.log('Firebase initialized with application default credentials');
-      return admin;
+    // Check if Firebase is enabled
+    if (process.env.FCM_ENABLED !== 'true') {
+      console.log('Firebase is disabled by configuration');
+      return null;
     }
-    else {
-      throw new Error('Firebase service account not found in environment variables');
+    
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        return admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount)
+        });
+      } catch (parseError) {
+        console.error('Error parsing Firebase service account JSON:', parseError);
+        // Initialize with minimal config for testing
+        return admin.initializeApp({
+          projectId: 'novel-nooks-e1d16'
+        });
+      }
+    } else {
+      console.log('No Firebase service account found');
+      return null;
     }
   } catch (error) {
-    console.error('Error initializing Firebase:', error);
-    throw error;
+    console.error('Firebase initialization error:', error);
+    return null;
   }
 }
 
-// Initialize Firebase
-const firebaseAdmin = initializeFirebase();
+// Initialize Firebase with error handling
+let firebaseAdmin = null;
+try {
+  firebaseAdmin = initializeFirebase();
+  if (firebaseAdmin) {
+    console.log('Firebase initialized successfully');
+  }
+} catch (err) {
+  console.error('Could not initialize Firebase:', err);
+}
 
 module.exports = firebaseAdmin;
