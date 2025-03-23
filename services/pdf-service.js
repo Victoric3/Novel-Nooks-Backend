@@ -1,7 +1,18 @@
-const pdfjsLib = require('pdfjs-dist');
-const fs = require('fs');
+let pdfjsLib;
 
+try {
+  // Try default import first (no warnings in dev)
+  pdfjsLib = require('pdfjs-dist');
+} catch (error) {
+  // If that fails, use legacy build (works in Azure)
+  console.log('Falling back to legacy PDF.js build');
+  pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+}
+
+// Disable worker in Node.js environment
 pdfjsLib.GlobalWorkerOptions.workerPort = null;
+
+const fs = require('fs');
 
 const extractTextFromPdf = async (pdfBuffer) => {
   // Convert Buffer to Uint8Array
