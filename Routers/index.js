@@ -11,6 +11,7 @@ const sitemapRoute = require("./sitemapRouter");
 const searchSuggestionsRoute = require("./searchSuggestions");
 const notification = require("./notification");
 const userPreferences = require("./userPreference");
+const adminRoute = require("./admin");
 
 router.use("/userPreferences", userPreferences);
 router.use("/notification", notification);
@@ -20,6 +21,7 @@ router.use("/user", userRoute);
 router.use("/call", scheduleCallRoute);
 router.use("/premium", premiumRoute);
 router.use("/comment", commentRoute);
+router.use("/admin", adminRoute);
 router.use("/", sitemapRoute);
 
 module.exports = router;

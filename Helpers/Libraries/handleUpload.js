@@ -63,10 +63,28 @@ const handleImageUpload = async (req, res, next) => {
   }
 };
 
+// Update the handleStoryUpload function to be more memory efficient
+
 const handleStoryUpload = async (req, res, next) => {
   const apiKey = process.env.IMAGE_UPLOAD_API_KEY;
-  const storage = multer.memoryStorage();
-  const upload = multer({ storage: storage });
+
+  // Set file size limits and other options
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 20 * 1024 * 1024, // 20MB max file size
+    },
+    fileFilter: (req, file, cb) => {
+      // Only accept PDFs and images
+      if (file.fieldname === "pdfFile" && file.mimetype !== "application/pdf") {
+        return cb(new Error("Only PDF files are allowed for PDF uploads"));
+      }
+      if (file.fieldname === "image" && !file.mimetype.startsWith("image/")) {
+        return cb(new Error("Only image files are allowed for image uploads"));
+      }
+      cb(null, true);
+    },
+  });
 
   try {
     // Handle both image and PDF uploads
@@ -75,42 +93,59 @@ const handleStoryUpload = async (req, res, next) => {
       { name: "image", maxCount: 1 },
     ])(req, res, async function (err) {
       if (err) {
-        return next(err);
+        return res.status(400).json({
+          success: false,
+          errorMessage: `Upload error: ${err.message}`,
+        });
       }
 
-      // Process image if uploaded
+      // Process image if uploaded - with error handling
       if (req.files && req.files["image"] && req.files["image"][0]) {
-        const imageFile = req.files["image"][0];
-        const fileBuffer = imageFile.buffer;
-        const base64Image = fileBuffer.toString("base64");
-
-        const form = new FormData();
-        form.append("key", apiKey);
-        form.append("image", base64Image);
-
         try {
+          const imageFile = req.files["image"][0];
+          const fileBuffer = imageFile.buffer;
+          const base64Image = fileBuffer.toString("base64");
+
+          const form = new FormData();
+          form.append("key", apiKey);
+          form.append("image", base64Image);
+
           const response = await axios.post(
             "https://api.imgbb.com/1/upload",
             form,
             { headers: { ...form.getHeaders() } }
           );
           req.fileLink = response.data.data.url;
+
+          // Clear buffer to free memory
+          imageFile.buffer = null;
         } catch (imageError) {
           console.error("Image upload error:", imageError);
+          // Continue without image if upload fails
         }
       }
 
-      // Process PDF if uploaded
+      // Process PDF if uploaded - with streaming and memory optimization
       if (req.files && req.files["pdfFile"] && req.files["pdfFile"][0]) {
-        const pdfFile = req.files["pdfFile"][0];
-
         try {
-          // Pass the buffer directly to processPdf
-          const pdfData = await processPdf(pdfFile.buffer);
+          const pdfFile = req.files["pdfFile"][0];
+
+          // Process PDF in chunks to reduce memory usage
+          const pdfData = await processPdf(pdfFile.buffer, {
+            maxContentLength: 500000, // Limit content size per chapter
+            maxChapters: 100, // Limit number of chapters
+          });
+
           req.pdfData = pdfData;
+
+          // Clear buffer to free memory
+          pdfFile.buffer = null;
         } catch (pdfError) {
           console.error("PDF processing error:", pdfError);
-          return next(pdfError);
+          return res.status(400).json({
+            success: false,
+            errorMessage: `PDF processing error: ${pdfError.message}`,
+          });
         }
       }
 
@@ -118,7 +153,10 @@ const handleStoryUpload = async (req, res, next) => {
     });
   } catch (error) {
     console.error("File upload error:", error);
-    next(error);
+    return res.status(500).json({
+      success: false,
+      errorMessage: `Upload error: ${error.message}`,
+    });
   }
 };
 

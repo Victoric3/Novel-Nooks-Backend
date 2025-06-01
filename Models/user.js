@@ -1,12 +1,10 @@
 const crypto = require("crypto");
-
 const mongoose = require("mongoose");
-
 const bcrypt = require("bcryptjs");
-
 const jwt = require("jsonwebtoken");
-
 const dotenv = require("dotenv");
+const { registerDeviceForUser } = require('../Controllers/notification');
+
 dotenv.config({ path: "./config.env" });
 
 const UserSchema = new mongoose.Schema(
@@ -21,35 +19,21 @@ const UserSchema = new mongoose.Schema(
       type: [String],
       default: [
         "Romance",
-        "shortStory",
-        "sci-Fi",
+        "Werewolf",
+        "Mafia",
+        "System",
         "Fantasy",
-        "Horror",
-        "Mystery",
-        "Non-Fiction",
-        "Historical Fiction",
-        "Multi-genre",
-        "Adventure",
-        "Biography",
-        "Science",
-        "Self-Help",
-        "Personal-development",
-      ],
-      enum: [
-        "Romance",
-        "shortStory",
-        "sci-Fi",
-        "Fantasy",
-        "Horror",
-        "Mystery",
-        "Non-Fiction",
-        "Historical Fiction",
-        "Multi-genre",
-        "Adventure",
-        "Biography",
-        "Science",
-        "Self-Help",
-        "Personal-development",
+        "Urban",
+        "YA/TEEN",
+        "Paranormal",
+        "Mystery/Thriller",
+        "Eastern",
+        "Games",
+        "History",
+        "MM Romance",
+        "Sci-Fi",
+        "War",
+        "Other"
       ],
     },
     temporary: Boolean,
@@ -297,8 +281,73 @@ UserSchema.methods.addSession = async function (sessionData) {
   this.sessions.push({
     ...sessionData,
     lastActive: new Date(),
-    expiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000) // 60 days
+    expiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000) // 30 days
   });
+  
+  // Register device for notifications if device info is provided
+  if (sessionData && sessionData.device) {
+    try {
+      let deviceInfo;
+      
+      // Handle the device info whether it's a string or object
+      if (typeof sessionData.device === 'string') {
+        deviceInfo = JSON.parse(sessionData.device);
+      } else {
+        deviceInfo = sessionData.device;
+      }
+      
+      // Check if we have the required fields
+      if (deviceInfo.uniqueIdentifier && deviceInfo.fcmToken) {
+        const Device = require('../Models/device');
+        
+        // Look for an existing device with this unique identifier for this user
+        const existingDevice = await Device.findOne({ 
+          user: this._id,
+          uniqueIdentifier: deviceInfo.uniqueIdentifier
+        });
+        
+        if (existingDevice) {
+          // Update the existing device
+          existingDevice.fcmToken = deviceInfo.fcmToken;
+          existingDevice.deviceType = deviceInfo.deviceType || 'unknown';
+          existingDevice.os = deviceInfo.os || 'unknown';
+          existingDevice.appVersion = deviceInfo.appVersion || 'unknown';
+          existingDevice.lastUsed = new Date();
+          existingDevice.isActive = true;
+          
+          // Add the session token to the device's sessions
+          if (sessionData.token && !existingDevice.sessionIds.includes(sessionData.token)) {
+            existingDevice.sessionIds.push(sessionData.token);
+          }
+          
+          await existingDevice.save();
+          console.log(`Updated existing device: ${existingDevice._id}`);
+        } else {
+          // Create a new device
+          const newDevice = new Device({
+            user: this._id,
+            fcmToken: deviceInfo.fcmToken,
+            deviceType: deviceInfo.deviceType || 'unknown',
+            os: deviceInfo.os || 'unknown',
+            appVersion: deviceInfo.appVersion || 'unknown',
+            uniqueIdentifier: deviceInfo.uniqueIdentifier,
+            sessionIds: sessionData.token ? [sessionData.token] : []
+          });
+          
+          await newDevice.save();
+          console.log(`Created new device: ${newDevice._id}`);
+          
+          // Check device limit for this user
+          await Device.enforceDeviceLimit(this._id, this.maxSessions);
+        }
+      } else {
+        console.warn('Device info missing required fields: uniqueIdentifier or fcmToken');
+      }
+    } catch (error) {
+      console.warn(`Failed to register device: ${error.message}`);
+      // Don't fail the session creation if device registration fails
+    }
+  }
 };
 
 UserSchema.methods.validateSession = function (token) {

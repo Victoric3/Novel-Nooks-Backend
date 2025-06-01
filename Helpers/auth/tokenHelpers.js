@@ -39,10 +39,24 @@ const sendToken = async (user, statusCode, req, res, message, device) => {
     path: '/'
   };
 
+  // Handle device object properly
+  let deviceInfo = device;
+  
+  // If deviceInfo is provided as a string, parse it
+  if (typeof deviceInfo === 'string') {
+    try {
+      deviceInfo = JSON.parse(deviceInfo);
+    } catch (err) {
+      console.warn('Invalid device info format:', err.message);
+      // Continue without device info
+      deviceInfo = null;
+    }
+  }
+
   // Add session and token validation
   const sessionData = {
     token: crypto.createHash('sha256').update(token).digest('hex'),
-    device,
+    device: deviceInfo,
     ipAddress: req.ip
   };
   

@@ -13,7 +13,9 @@ const {
   editStory,
   deleteStory,
   getEbooksForUserEndPoint,
-  checkStoryUpdates
+  checkStoryUpdates,
+  getSpecificEbook,
+  getStoriesByTag
 } = require("../Controllers/story");
 
 const router = express.Router();
@@ -29,14 +31,14 @@ router.post("/", [
 ]);
 
 // Edit story with PDF support
-router.put("/:slug/edit", [
+router.put("/edit", [
   validateSession,
   handleStoryUpload,
   editStory
 ]);
 
 // Other routes remain unchanged
-router.get("/", validateSession, getAllStories);
+router.get("/getAllStories", validateSession, getAllStories);
 router.get("/:id", validateSession, detailStory);
 router.get("/:slug/edit", validateSession, editStoryPage);
 router.post("/:id/like", validateSession, likeStory);
@@ -47,5 +49,11 @@ router.get("/user/get", validateSession, getEbooksForUserEndPoint);
 
 // Add route for checking story updates
 router.get("/:id/check-updates", validateSession, checkStoryUpdates);
+
+// Get specific eBook with details (different from detailStory which is for EPUB downloads)
+router.get("/ebook/:id", validateSession, getSpecificEbook);
+
+// Add this route to your story.js router
+router.get("/tag/:tag", validateSession, getStoriesByTag);
 
 module.exports = router;

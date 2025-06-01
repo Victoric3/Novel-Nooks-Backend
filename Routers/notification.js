@@ -1,39 +1,27 @@
-const express = require("express");
-const {
-  getUnreadNotifications,
-  getAllNotifications,
-  getNotificationCounts,
+const express = require('express');
+const router = express.Router();
+const { validateSession } = require("../Middlewares/Authorization/auth");
+const { 
+  registerDevice, 
+  sendNotification, 
+  getNotificationHistory,
   markAsRead,
   markAllAsRead,
-  deleteNotification,
-  deleteMultipleNotifications,
-  deleteAllNotifications,
-  sendNotification,
-  testNotification
-} = require("../Controllers/notification");
-const { getAccessToRoute } = require("../Middlewares/Authorization/auth");
+  getUnreadCount,
+  markMultipleAsRead,
+  notificationLimit 
+} = require('../Controllers/notification');
 
-const router = express.Router();
+router.use(validateSession);
 
-// Protect all routes
-router.use(getAccessToRoute);
+router.post('/device/register', registerDevice);
+router.post('/send', notificationLimit, sendNotification);
+router.get('/history', getNotificationHistory);
 
-// GET routes - fetch notifications
-router.get("/unread", getUnreadNotifications);
-router.get("/all", getAllNotifications);
-router.get("/counts", getNotificationCounts);
+router.patch('/read/:notificationId', markAsRead);
+router.patch('/read-all', markAllAsRead);
+router.get('/unread-count', getUnreadCount);
+router.patch('/read-multiple', markMultipleAsRead);
 
-// PUT routes - update notifications
-router.put("/:notificationId/read", markAsRead);
-router.put("/read-all", markAllAsRead);
-
-// POST routes - create notifications
-router.post("/send", sendNotification);
-router.post("/test", testNotification);
-
-// DELETE routes - remove notifications
-router.delete("/:notificationId", deleteNotification);
-router.delete("/", deleteAllNotifications);
-router.post("/delete-multiple", deleteMultipleNotifications); // Using POST for array of IDs
 
 module.exports = router;

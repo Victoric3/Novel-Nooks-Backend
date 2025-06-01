@@ -13,6 +13,7 @@ const {
   googleSignIn,
   changeUserName,
   verificationRateLimit,
+  signOut,
 } = require("../Controllers/auth");
 
 const {
@@ -53,6 +54,8 @@ router.get("/readList", validateSession, readListPage)
 router.get("/readList/check/:ebookId", validateSession, checkStoryInReadList);
 
 router.get("/favorites", validateSession, getLikedStoriesPage);
+
+router.get("/favorites", validateSession, signOut);
 
 
 module.exports = router;

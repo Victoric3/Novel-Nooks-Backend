@@ -17,6 +17,11 @@ const { generateAnonymousId } = require("../Helpers/auth/anonymousHelper");
 const rateLimit = require("express-rate-limit");
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const { 
+  sendLoginNotification, 
+  sendPasswordResetNotification, 
+  sendUsernameChangeNotification 
+} = require('./notification');
 
 
 const getPrivateData = (req, res, next) => {
@@ -157,7 +162,6 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { identity, password, ipAddress, device } = req.body;
-    console.log("login called", req.body)
 
     if (!identity || !password) {
       return res.status(400).json({
@@ -194,6 +198,19 @@ const login = async (req, res) => {
     // Update IP in background if verification not needed
     addIpAddress(user, ipAddress);
 
+    // Send login notification
+    try {
+      sendLoginNotification(user._id, {
+        deviceInfo: device,
+        ipAddress,
+        time: new Date().toISOString()
+      }).catch(error => {
+        console.log(`Failed to send login notification: ${error.message}`);
+      });
+    } catch (notificationError) {
+      console.log(`Error preparing login notification: ${notificationError.message}`);
+    }
+
     return sendToken(user, 200, req, res, "Login successful", device);
   } catch (error) {
     console.error("Login error:", error);
@@ -223,8 +240,17 @@ const changeUserName = async (req, res) => {
         errorMessage: "There is already a user with this username",
       });
     }
+    
+    const oldUsername = user.username; // Store old username before changing
     user.username = newUsername;
     await user.save();
+
+    // Send username change notification
+    sendUsernameChangeNotification(user._id, {
+      oldUsername,
+      newUsername
+    }).catch(err => console.warn(`Failed to send username change notification: ${err.message}`));
+
     res.status(200).json({
       message: "username updated successfully",
     });
@@ -270,7 +296,7 @@ const forgotpassword = async (req, res) => {
 
 const resetpassword = async (req, res) => {
   const { resetPasswordToken, newPassword } = req.body;
-  console.log(resetPasswordToken, newPassword)
+  
   try {
     if (!resetPasswordToken) {
       return res.status(400).json({
@@ -319,6 +345,12 @@ const resetpassword = async (req, res) => {
     user.validTokens = [];
 
     await user.save();
+
+    // Send password reset notification
+    sendPasswordResetNotification(user._id, {
+      ipAddress: req.ip,
+      time: new Date().toISOString()
+    }).catch(err => console.warn(`Failed to send password reset notification: ${err.message}`));
 
     return res.status(200).json({
       success: true,
@@ -537,6 +569,52 @@ const verificationRateLimit = rateLimit({
   message: "Too many verification attempts"
 });
 
+const signOut = async (req, res) => {
+  try {
+    // Get user from request (already set by validateSession middleware)
+    const user = req.user;
+    
+    // Get token from cookie (same way validateSession gets it)
+    const token = getAccessTokenFromCookies(req);
+    
+    if (!token) {
+      return res.status(400).json({
+        status: "failed",
+        errorMessage: "No authentication token provided"
+      });
+    }
+    
+    // Hash the token to match what's stored in the database
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    // Remove this specific session from the sessions array
+    user.sessions = user.sessions.filter(session => session.token !== hashedToken);
+    
+    // Remove the token from validTokens array
+    user.validTokens = user.validTokens.filter(validToken => validToken !== hashedToken);
+    
+    await user.save();
+    
+    // Clear auth cookie
+    res.clearCookie("access_token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict"
+    });
+    
+    return res.status(200).json({
+      status: "success",
+      message: "Successfully signed out"
+    });
+  } catch (error) {
+    // console.error("Sign out error:", error);
+    return res.status(500).json({
+      status: "failed",
+      errorMessage: "Internal server error"
+    });
+  }
+};
+
 module.exports = {
   testmail,
   register,
@@ -549,5 +627,6 @@ module.exports = {
   unUsualSignIn,
   changeUserName,
   verificationRateLimit,
-  googleSignIn
+  googleSignIn,
+  signOut
 };

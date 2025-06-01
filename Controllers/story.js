@@ -2,30 +2,28 @@ const asyncErrorWrapper = require("express-async-handler");
 const Story = require("../Models/story");
 const User = require("../Models/user");
 const deleteImageFile = require("../Helpers/Libraries/deleteImageFile");
-const { createNotification } = require("./notification");
-const fs = require('fs');
-const path = require('path');
-const EPub = require('epub-gen');
-const os = require('os');
-const util = require('util');
+const { sendNotificationToUser } = require("./notification");
+const fs = require("fs");
+const path = require("path");
+const EPub = require("epub-gen");
+const os = require("os");
+const util = require("util");
 
 // Updated to handle PDF uploads
 const addStory = async (req, res) => {
   try {
-    let { title, summary, tags, prizePerChapter, free, contentCount, completed } = req.body;
-
+    let { title, summary, tags, labels, free, contentCount, completed } =
+      req.body;
+    console.log(title, summary, tags, labels, free, contentCount, completed);
+    let prizePerChapter = free ? 0 : 5;
     // Process JSON fields that may be sent as strings
-    tags = typeof tags === 'string' ? JSON.parse(tags) : (tags || []);
-    contentCount = req.pdfData?.contentCount ||
-      (typeof contentCount === 'string' ? JSON.parse(contentCount) : (contentCount || []));
-
-    // Only admins are allowed to create stories
-    if (req.user.role !== "admin") {
-      return res.status(401).json({
-        status: "unauthorized",
-        errorMessage: "You need to have admin access to do this",
-      });
-    }
+    tags = typeof tags === "string" ? JSON.parse(tags) : tags || [];
+    labels = typeof labels === "string" ? JSON.parse(labels) : labels || [];
+    contentCount =
+      req.pdfData?.contentCount ||
+      (typeof contentCount === "string"
+        ? JSON.parse(contentCount)
+        : contentCount || []);
 
     // Check if PDF was processed
     if (!req.pdfData && !req.body.content) {
@@ -54,19 +52,34 @@ const addStory = async (req, res) => {
     }
 
     // Validate chapter content
-    const shortContent = content.filter(item => item.length < 100);
-    if (shortContent.length > 0) {
-      return res.status(400).json({
-        success: false,
-        errorMessage: "Each chapter must be at least 100 characters",
-      });
+    // Filter out chapters that are too short instead of returning an error
+    const originalLength = content.length;
+    content = content.filter((chapter) => chapter.length >= 100);
+
+    if (content.length < originalLength) {
+      console.log(
+        `Removed ${
+          originalLength - content.length
+        } chapter(s) with less than 100 characters`
+      );
+
+      // If all chapters were removed, return an error
+      if (content.length === 0) {
+        return res.status(400).json({
+          success: false,
+          errorMessage:
+            "All chapters are too short. Each chapter must be at least 100 characters",
+        });
+      }
     }
 
     // Use calculated read times or calculate based on content
-    const readTime = req.pdfData?.readTimes || content.map(chapter => {
-      const wordCount = chapter?.trim().split(/\s+/).length;
-      return Math.floor(wordCount / 200);
-    });
+    const readTime =
+      req.pdfData?.readTimes ||
+      content.map((chapter) => {
+        const wordCount = chapter?.trim().split(/\s+/).length;
+        return Math.floor(wordCount / 200);
+      });
 
     // Create the story
     const newStory = await Story.create({
@@ -76,48 +89,71 @@ const addStory = async (req, res) => {
       image: req.fileLink || "https://i.ibb.co/Jx8zhtr/story.jpg",
       readTime,
       tags,
+      labels, // Save the labels
       summary,
       prizePerChapter,
       free,
       completed: completed ?? true,
-      contentCount: contentCount.length > 0 ? contentCount :
-        Array.from({ length: content.length }, (_, i) => `Chapter ${i + 1}`),
+      contentCount:
+        contentCount.length > 0
+          ? contentCount
+          : Array.from(
+              { length: content.length },
+              (_, i) => `Chapter ${i + 1}`
+            ),
       contentCount: content.length,
     });
 
-    // Send notification to all users with the "books" preference
-    // const users = await User.find({
-    //   'notificationSettings.books': true
-    // });
-
-    // // Send notifications to interested users
-    // const notificationPromises = users.map(user => 
-    //   createNotification(
-    //     user._id,
-    //     "STORY_UPDATE",
-    //     "New Story Published",
-    //     `${title} - A new story is now available!`,
-    //     {
-    //       storyId: newStory._id,
-    //       slug: newStory.slug,
-    //       image: newStory.image,
-    //       route: "book_detail",
-    //       params: { slug: newStory.slug }
-    //     }
-    //   )
-    // );
-
-    // // Don't await notifications to speed up response
-    // Promise.allSettled(notificationPromises).catch(err => 
-    //   console.error("Failed to send notifications:", err)
-    // );
+    // Send notifications to users who have liked other books by this author
 
     // Send success response
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Story added successfully",
       data: newStory,
     });
+
+    try {
+      // Find users who have liked any story from this author before
+      const authorId = req.user._id;
+      const previousStories = await Story.find({ author: authorId }).select(
+        "_id"
+      );
+      const previousStoryIds = previousStories.map((story) => story._id);
+
+      // Find users who liked any of these stories
+      const interestedUsers = await User.find({
+        likes: { $in: previousStoryIds },
+      }).select("_id");
+
+      // Send notifications to these users
+      if (interestedUsers && interestedUsers.length > 0) {
+        console.log(
+          `Sending notifications to ${interestedUsers.length} users who liked previous stories`
+        );
+
+        interestedUsers.forEach((user) => {
+          sendNotificationToUser(user._id, {
+            title: "New Story From Author You Follow",
+            body: `${title} - A new story from ${
+              req.user.username || "an author you follow"
+            } is now available!`,
+            type: "info",
+            data: {
+              storyId: newStory._id.toString(),
+              slug: newStory.slug,
+              image: newStory.image,
+              route: "book_detail",
+              params: { slug: newStory.slug },
+            },
+          }).catch((err) =>
+            console.warn("Failed to send new story notification:", err)
+          );
+        });
+      }
+    } catch (notifyError) {
+      console.warn("Error sending story notifications:", notifyError.message);
+    }
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -235,12 +271,12 @@ const getAllStories = async (req, res) => {
       { $unwind: "$authorInfo" },
       // Stage 4: Apply section-specific filters
       ...(section === "free" ? [{ $match: { free: true } }] : []),
-      ...(section === "editorPicks" ? [{ $match: { isEditorPick: true } }] : []),
+      ...(section === "editorPicks"
+        ? [{ $match: { isEditorPick: true } }]
+        : []),
       // Stage 5: Apply general filters
       ...(tags ? [{ $match: { tags: { $all: tags.split(",") } } }] : []),
-      ...(free !== undefined
-        ? [{ $match: { free: free === "true" } }]
-        : []),
+      ...(free !== undefined ? [{ $match: { free: free === "true" } }] : []),
       ...(completed !== undefined
         ? [{ $match: { completed: completed === "true" } }]
         : []),
@@ -252,15 +288,15 @@ const getAllStories = async (req, res) => {
         : []),
       ...(searchQuery
         ? [
-          {
-            $match: {
-              $or: [
-                { title: { $regex: new RegExp(searchQuery, "i") } },
-                { summary: { $regex: new RegExp(searchQuery, "i") } },
-              ],
+            {
+              $match: {
+                $or: [
+                  { title: { $regex: new RegExp(searchQuery, "i") } },
+                  { summary: { $regex: new RegExp(searchQuery, "i") } },
+                ],
+              },
             },
-          },
-        ]
+          ]
         : []),
       ...(authorUsername
         ? [{ $match: { "authorInfo.username": authorUsername } }]
@@ -268,84 +304,98 @@ const getAllStories = async (req, res) => {
       // Stage 6: Add likeStatus and isInReadingList if user is authenticated
       ...(userId
         ? [
-          {
-            $lookup: {
-              from: "users",
-              let: { storyId: { $toString: "$_id" } },
-              pipeline: [
-                { $match: { _id: userId } },
-                {
-                  $project: {
-                    _id: 0,
-                    // Check if likes array exists and contains story ID
-                    hasLiked: {
-                      $cond: {
-                        if: { $isArray: "$likes" },
-                        then: {
-                          $in: [
-                            "$$storyId",
-                            { $map: { input: "$likes", as: "id", in: { $toString: "$$id" } } }
-                          ]
+            {
+              $lookup: {
+                from: "users",
+                let: { storyId: { $toString: "$_id" } },
+                pipeline: [
+                  { $match: { _id: userId } },
+                  {
+                    $project: {
+                      _id: 0,
+                      // Check if likes array exists and contains story ID
+                      hasLiked: {
+                        $cond: {
+                          if: { $isArray: "$likes" },
+                          then: {
+                            $in: [
+                              "$$storyId",
+                              {
+                                $map: {
+                                  input: "$likes",
+                                  as: "id",
+                                  in: { $toString: "$$id" },
+                                },
+                              },
+                            ],
+                          },
+                          else: false,
                         },
-                        else: false
-                      }
+                      },
+                      // Check if readList array exists and contains story ID
+                      isInReadingList: {
+                        $cond: {
+                          if: { $isArray: "$readList" },
+                          then: {
+                            $in: [
+                              "$$storyId",
+                              {
+                                $map: {
+                                  input: "$readList",
+                                  as: "id",
+                                  in: { $toString: "$$id" },
+                                },
+                              },
+                            ],
+                          },
+                          else: false,
+                        },
+                      },
                     },
-                    // Check if readList array exists and contains story ID
-                    isInReadingList: {
-                      $cond: {
-                        if: { $isArray: "$readList" },
-                        then: {
-                          $in: [
-                            "$$storyId",
-                            { $map: { input: "$readList", as: "id", in: { $toString: "$$id" } } }
-                          ]
-                        },
-                        else: false
-                      }
-                    }
-                  }
-                }
-              ],
-              as: "userInteraction"
-            }
-          },
-          {
-            $addFields: {
-              // Handle case where no user document was found
-              userInteraction: {
-                $cond: {
-                  if: { $gt: [{ $size: "$userInteraction" }, 0] },
-                  then: { $arrayElemAt: ["$userInteraction", 0] },
-                  else: { hasLiked: false, isInReadingList: false }
-                }
-              }
-            }
-          },
-          {
-            $addFields: {
-              likeStatus: { $ifNull: ["$userInteraction.hasLiked", false] },
-              isInReadingList: { $ifNull: ["$userInteraction.isInReadingList", false] }
-            }
-          },
-          {
-            $project: {
-              userInteraction: 0
-            }
-          }
-        ]
+                  },
+                ],
+                as: "userInteraction",
+              },
+            },
+            {
+              $addFields: {
+                // Handle case where no user document was found
+                userInteraction: {
+                  $cond: {
+                    if: { $gt: [{ $size: "$userInteraction" }, 0] },
+                    then: { $arrayElemAt: ["$userInteraction", 0] },
+                    else: { hasLiked: false, isInReadingList: false },
+                  },
+                },
+              },
+            },
+            {
+              $addFields: {
+                likeStatus: { $ifNull: ["$userInteraction.hasLiked", false] },
+                isInReadingList: {
+                  $ifNull: ["$userInteraction.isInReadingList", false],
+                },
+              },
+            },
+            {
+              $project: {
+                userInteraction: 0,
+              },
+            },
+          ]
         : [
-          {
-            $addFields: {
-              likeStatus: false,
-              isInReadingList: false
-            }
-          }
-        ]),
+            {
+              $addFields: {
+                likeStatus: false,
+                isInReadingList: false,
+              },
+            },
+          ]),
       // Stage 7: Apply sorting
       ...(section && sectionSortMap[section]
         ? [{ $sort: { [sectionSortMap[section]]: -1 } }]
         : section === "recommended" && userId
-          ? [
+        ? [
             // Recommended: Boost stories matching user's preferred tags
             {
               $lookup: {
@@ -366,49 +416,66 @@ const getAllStories = async (req, res) => {
                     if: {
                       $and: [
                         { $isArray: "$tags" },
-                        { $isArray: "$userData.preferredTags" }
-                      ]
+                        { $isArray: "$userData.preferredTags" },
+                      ],
                     },
-                    then: { $size: { $ifNull: [{ $setIntersection: ["$tags", "$userData.preferredTags"] }, []] } },
-                    else: 0
-                  }
-                }
-              }
-            },
-            { $sort: { tagMatchCount: -1, rankPoints: -1 } },
-          ]
-          : specific && slug === "recent"
-            ? [{ $sort: { createdAt: -1 } }]
-            : specific
-              ? [{ $match: { tags: slug } }, { $sort: { rankPoints: -1 } }]
-              : slug
-                ? [
-                  {
-                    $addFields: {
-                      rankPoints: {
-                        $add: [
-                          "$rankPoints",
+                    then: {
+                      $size: {
+                        $ifNull: [
                           {
-                            $multiply: [
-                              // Replace this problematic section
-                              {
-                                $size: {
-                                  $ifNull: [
-                                    { $setIntersection: ["$tags", slug.split("+").filter(Boolean)] },
-                                    []
-                                  ]
-                                }
-                              },
-                              1000,
+                            $setIntersection: [
+                              "$tags",
+                              "$userData.preferredTags",
                             ],
                           },
+                          [],
                         ],
                       },
                     },
+                    else: 0,
                   },
-                  { $sort: { rankPoints: -1 } },
-                ]
-                : [{ $sort: { rankPoints: -1 } }]),
+                },
+              },
+            },
+            { $sort: { tagMatchCount: -1, rankPoints: -1 } },
+          ]
+        : specific && slug === "recent"
+        ? [{ $sort: { createdAt: -1 } }]
+        : specific
+        ? [{ $match: { tags: slug } }, { $sort: { rankPoints: -1 } }]
+        : slug
+        ? [
+            {
+              $addFields: {
+                rankPoints: {
+                  $add: [
+                    "$rankPoints",
+                    {
+                      $multiply: [
+                        // Replace this problematic section
+                        {
+                          $size: {
+                            $ifNull: [
+                              {
+                                $setIntersection: [
+                                  "$tags",
+                                  slug.split("+").filter(Boolean),
+                                ],
+                              },
+                              [],
+                            ],
+                          },
+                        },
+                        1000,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            { $sort: { rankPoints: -1 } },
+          ]
+        : [{ $sort: { rankPoints: -1 } }]),
       // Stage 8: Pagination with $facet
       {
         $facet: {
@@ -441,13 +508,15 @@ const getAllStories = async (req, res) => {
                 contentCount: 1,
                 likeStatus: { $ifNull: ["$likeStatus", false] },
                 isInReadingList: { $ifNull: ["$isInReadingList", false] },
+                views: 1,
+                isFeatured: 1,
                 ratings: {
                   $cond: {
                     if: { $isArray: "$ratings" },
                     then: "$ratings",
-                    else: []
-                  }
-                }
+                    else: [],
+                  },
+                },
               },
             },
           ],
@@ -459,7 +528,6 @@ const getAllStories = async (req, res) => {
     const [result] = await Story.aggregate(pipeline);
     const { metadata, data } = result || { metadata: [], data: [] };
     const totalCount = metadata[0]?.total || 0;
-
 
     return res.status(200).json({
       success: true,
@@ -490,7 +558,11 @@ const detailStory = async (req, res) => {
     // Parallel fetch of user and story data for better performance
     const [user, story] = await Promise.all([
       User.findById(req.user._id, "free vouchers purchased"),
-      Story.findById(id).select("title slug summary image content contentTitles free prizePerChapter author tags").lean()
+      Story.findById(id)
+        .select(
+          "title slug summary image content contentTitles free prizePerChapter author tags"
+        )
+        .lean(),
     ]);
 
     // Early validation checks
@@ -521,11 +593,12 @@ const detailStory = async (req, res) => {
     } else {
       // Calculate total cost for non-free chapters after index 4 (first 5 are free)
       const nonFreeChapters = story.content.length - 5;
-      const totalCost = nonFreeChapters > 0 ? story.prizePerChapter * nonFreeChapters : 0;
+      const totalCost =
+        nonFreeChapters > 0 ? story.prizePerChapter * nonFreeChapters : 0;
 
       // Check if user has purchased any chapters
       const purchasedChapters =
-        user.purchased.find(item => item.slug === story.slug)?.chapter || [];
+        user.purchased.find((item) => item.slug === story.slug)?.chapter || [];
 
       if (user.vouchers >= totalCost) {
         // User can afford the entire book
@@ -545,11 +618,13 @@ const detailStory = async (req, res) => {
 
           // Update purchased chapters
           if (purchasedChapters.length > 0) {
-            user.purchased = user.purchased.map(item => {
+            user.purchased = user.purchased.map((item) => {
               if (item.slug === story.slug) {
                 return {
                   ...item,
-                  chapter: [...new Set([...item.chapter, ...chaptersToPurchase])]
+                  chapter: [
+                    ...new Set([...item.chapter, ...chaptersToPurchase]),
+                  ],
                 };
               }
               return item;
@@ -557,7 +632,7 @@ const detailStory = async (req, res) => {
           } else {
             user.purchased.push({
               slug: story.slug,
-              chapter: chaptersToPurchase
+              chapter: chaptersToPurchase,
             });
           }
 
@@ -566,7 +641,7 @@ const detailStory = async (req, res) => {
       } else {
         // User can't afford the entire book - provide first 5 chapters
         isPartial = true;
-        chaptersToInclude = [...Array(5).keys()];  // Indices 0-4 (first 5 chapters)
+        chaptersToInclude = [...Array(5).keys()]; // Indices 0-4 (first 5 chapters)
       }
     }
 
@@ -600,16 +675,19 @@ const detailStory = async (req, res) => {
     `;
 
     // Prepare EPUB content with chapters
-    const epubChapters = chaptersToInclude.map(index => {
+    const epubChapters = chaptersToInclude.map((index) => {
       const chapterTitle = story.contentTitles[index] || `Chapter ${index + 1}`;
       const chapterContent = story.content[index] || "Content not available";
 
       // Split the content into paragraphs
-      const paragraphs = chapterContent.split('\n\n').filter(p => p.trim() !== '');
+      const paragraphs = chapterContent
+        .split("\n\n")
+        .filter((p) => p.trim() !== "");
 
       // Extract the first paragraph as subtitle if it exists
-      const subtitle = paragraphs.length > 0 ? paragraphs[0] : '';
-      const remainingParagraphs = paragraphs.length > 1 ? paragraphs.slice(1) : [];
+      const subtitle = paragraphs.length > 0 ? paragraphs[0] : "";
+      const remainingParagraphs =
+        paragraphs.length > 1 ? paragraphs.slice(1) : [];
 
       // Format each chapter with HTML to control page breaks and styling
       return {
@@ -618,10 +696,10 @@ const detailStory = async (req, res) => {
           <div class="chapter-content">
             <h1 class="chapter-title">${chapterTitle}</h1>
             <h2 class="chapter-subtitle">${subtitle}</h2>
-            ${remainingParagraphs.map(para => `<p>${para}</p>`).join('')}
+            ${remainingParagraphs.map((para) => `<p>${para}</p>`).join("")}
           </div>
         `,
-        beforeToc: index === 0 // First chapter comes before TOC
+        beforeToc: index === 0, // First chapter comes before TOC
       };
     });
 
@@ -643,26 +721,34 @@ const detailStory = async (req, res) => {
       genres: story.tags || [],
       css: chapterCSS, // Add our custom CSS
       fonts: [], // Can include custom fonts if needed
-      verbose: false
+      verbose: false,
     };
 
     // Create EPUB file - FIX: Added the output path as the second parameter
     await new EPub(epubOptions, epubFilePath).promise;
-
+    Story.findByIdAndUpdate(
+      id,
+      { $inc: { views: 1 } },
+      { new: false }  // Don't wait for the updated document
+    ).catch(err => console.error("Failed to update view count:", err));
+    
     // Send response with EPUB download
-    return res.download(epubFilePath, `${story.title.replace(/[^\w\s]/gi, '')}.epub`, async (err) => {
-      if (err) {
-        console.error("Error sending EPUB file:", err);
-      }
+    return res.download(
+      epubFilePath,
+      `${story.title.replace(/[^\w\s]/gi, "")}.epub`,
+      async (err) => {
+        if (err) {
+          console.error("Error sending EPUB file:", err);
+        }
 
-      // Clean up the temporary file
-      try {
-        fs.unlinkSync(epubFilePath);
-      } catch (unlinkError) {
-        console.error("Error deleting temporary EPUB:", unlinkError);
+        // Clean up the temporary file
+        try {
+          fs.unlinkSync(epubFilePath);
+        } catch (unlinkError) {
+          console.error("Error deleting temporary EPUB:", unlinkError);
+        }
       }
-    });
-
+    );
   } catch (error) {
     console.error("Error in detailStory:", error);
 
@@ -787,7 +873,7 @@ const likeStory = async (req, res) => {
       return res.status(200).json({
         success: true,
         data: updatedStory,
-        likeStatus: !hasLiked
+        likeStatus: !hasLiked,
       });
     } catch (error) {
       if (error.name === "VersionError" && retryCount < MAX_RETRIES) {
@@ -862,21 +948,23 @@ const rateStory = async (req, res, next) => {
         const updatedStory = await Story.findOneAndUpdate(
           {
             _id: story._id,
-            __v: story.__v // Version check
+            __v: story.__v, // Version check
           },
           updateQuery,
           {
             new: true,
-            runValidators: true
+            runValidators: true,
           }
         );
 
         // Now calculate average in a separate update
         if (updatedStory) {
           // Calculate average rating
-          const ratings = updatedStory.ratings.map(r => r.rating);
-          const averageRating = ratings.length > 0 ?
-            ratings.reduce((sum, r) => sum + r, 0) / ratings.length : 0;
+          const ratings = updatedStory.ratings.map((r) => r.rating);
+          const averageRating =
+            ratings.length > 0
+              ? ratings.reduce((sum, r) => sum + r, 0) / ratings.length
+              : 0;
 
           // Update the average and count
           updatedStory.averageRating = averageRating;
@@ -888,8 +976,8 @@ const rateStory = async (req, res, next) => {
             success: true,
             data: {
               averageRating: updatedStory.averageRating,
-              ratingCount: updatedStory.ratingCount
-            }
+              ratingCount: updatedStory.ratingCount,
+            },
           });
         }
 
@@ -900,7 +988,7 @@ const rateStory = async (req, res, next) => {
 
         return res.status(409).json({
           success: false,
-          message: "Concurrent update detected. Please try again."
+          message: "Concurrent update detected. Please try again.",
         });
       } catch (error) {
         if (error.name === "VersionError" && retryCount < MAX_RETRIES) {
@@ -912,21 +1000,20 @@ const rateStory = async (req, res, next) => {
         return res.status(500).json({
           success: false,
           message: "Failed to update rating",
-          error: process.env.NODE_ENV === "development" ? error.message : undefined
+          error:
+            process.env.NODE_ENV === "development" ? error.message : undefined,
         });
       }
     }
 
     return attemptRatingUpdate();
-  }
-  catch (error) {
+  } catch (error) {
     console.error("Error in rateStory:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to update rating",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
-
   }
 };
 
@@ -946,37 +1033,52 @@ const editStoryPage = asyncErrorWrapper(async (req, res, next) => {
 // Updated to handle PDF uploads for edits
 const editStory = async (req, res) => {
   try {
-    const { slug } = req.params;
-    let { title, summary, tags, contentCount } = req.body;
+    let { title, summary, tags, labels, contentCount, ebookId } = req.body;
+    console.log(title, summary, tags, labels, contentCount, ebookId);
 
-    if (req.user.role !== "admin") {
-      return res.status(401).json({
-        errorMessage: "You are not allowed to do this",
-      });
-    }
-
-    const story = await Story.findOne({ slug });
+    const story = await Story.findOne({ _id: ebookId }).select(
+      "author title summary tags labels image content contentCount readTime"
+    );
     if (!story) {
       return res.status(404).json({
         success: false,
         message: "Story not found",
       });
     }
+    console.log(story.author);
+    if (req.user._id.toString() !== story.author.toString()) {
+      return res.status(400).json({
+        success: false,
+        errorMessage: "You are not authorized to edit this story",
+      });
+    }
 
     // Process JSON fields
-    tags = typeof tags === 'string' ? JSON.parse(tags) : (tags || story.tags);
-    contentCount = req.pdfData?.contentCount ||
-      (typeof contentCount === 'string' ? JSON.parse(contentCount) : contentCount);
+    tags = typeof tags === "string" ? JSON.parse(tags) : tags || story.tags;
+    labels =
+      typeof labels === "string"
+        ? JSON.parse(labels)
+        : labels || story.labels || [];
+    contentCount =
+      req.pdfData?.contentCount ||
+      (typeof contentCount === "string"
+        ? JSON.parse(contentCount)
+        : contentCount);
 
     // Update story basic info
     const previousImage = story.image;
     story.title = title || story.title;
     story.summary = summary || story.summary;
     story.tags = tags;
+    story.labels = labels; // Update the labels
     story.image = req.fileLink || previousImage;
 
     // Handle image replacement
-    if (req.fileLink && previousImage && previousImage !== "https://i.ibb.co/Jx8zhtr/story.jpg") {
+    if (
+      req.fileLink &&
+      previousImage &&
+      previousImage !== "https://i.ibb.co/Jx8zhtr/story.jpg"
+    ) {
       deleteImageFile(req, previousImage);
     }
 
@@ -997,43 +1099,50 @@ const editStory = async (req, res) => {
 
     await story.save();
 
-    // Notify users about the story update
-    const followers = await User.find({
-      likes: story._id,
-      'notificationSettings.books': true
-    });
+    console.log("probably finished editing story");
 
-    // Send notifications to followers
-    const notificationPromises = followers.map(user =>
-      createNotification(
-        user._id,
-        "STORY_UPDATE",
-        "Story Updated",
-        `${story.title} has been updated!`,
-        {
-          storyId: story._id,
-          slug: story.slug,
-          image: story.image,
-          route: "book_detail",
-          params: { slug: story.slug }
-        }
-      )
-    );
-
-    // Don't await notifications to speed up response
-    Promise.allSettled(notificationPromises).catch(err =>
-      console.error("Failed to send update notifications:", err)
-    );
-
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       data: story,
     });
+
+    try {
+      // Find users who have liked this story
+      const followers = await User.distinct("_id", { likes: story._id });
+
+      if (followers && followers.length > 0) {
+        console.log(
+          `Sending update notifications to ${followers.length} users who liked this story`
+        );
+
+        followers.forEach((user) => {
+          sendNotificationToUser(user._id, {
+            title: "Book Update Available",
+            body: `${story.title} has been updated with new content!`,
+            type: "info",
+            data: {
+              storyId: story._id.toString(),
+              slug: story.slug,
+              image: story.image,
+              route: "book_detail",
+              params: { slug: story.slug },
+            },
+          }).catch((err) =>
+            console.warn("Failed to send story update notification:", err)
+          );
+        });
+      }
+    } catch (notifyError) {
+      console.warn(
+        "Error sending story update notifications:",
+        notifyError.message
+      );
+    }
   } catch (error) {
     console.error(error);
     res.status(500).json({
       success: false,
-      errorMessage: error.message || "Internal server error"
+      errorMessage: error.message || "Internal server error",
     });
   }
 };
@@ -1053,7 +1162,13 @@ const deleteStory = asyncErrorWrapper(async (req, res, next) => {
   });
 });
 
-const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", filterBy = "") => {
+const getEbooksForUser = async (
+  userId,
+  page = 1,
+  limit = 10,
+  searchQuery = "",
+  filterBy = ""
+) => {
   try {
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
@@ -1064,22 +1179,22 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
     // Apply search query if provided
     if (searchQuery) {
       query.$or = [
-        { title: { $regex: searchQuery, $options: 'i' } },
-        { description: { $regex: searchQuery, $options: 'i' } }
+        { title: { $regex: searchQuery, $options: "i" } },
+        { description: { $regex: searchQuery, $options: "i" } },
       ];
     }
 
     // Apply filters based on filterBy parameter
     if (filterBy) {
       switch (filterBy) {
-        case 'complete':
-          query.status = 'complete';
+        case "complete":
+          query.status = "complete";
           break;
-        case 'processing':
-          query.status = 'processing';
+        case "processing":
+          query.status = "processing";
           break;
         // 'recent' filter will be handled in sort
-        case 'all':
+        case "all":
         default:
           // No additional filter for 'all'
           break;
@@ -1115,7 +1230,9 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
     // Calculate total pages
     const totalPages = Math.ceil(total / limit);
 
-    console.log(`Found ${stories.length} ebooks for user with filter: ${filterBy}`);
+    console.log(
+      `Found ${stories.length} ebooks for user with filter: ${filterBy}`
+    );
 
     return {
       ebooks: stories,
@@ -1123,11 +1240,11 @@ const getEbooksForUser = async (userId, page = 1, limit = 10, searchQuery = "", 
         currentPage: page,
         totalPages,
         totalEbooks: total,
-        hasMore: page < totalPages
-      }
+        hasMore: page < totalPages,
+      },
     };
   } catch (error) {
-    console.error('Error fetching user ebooks:', error);
+    console.error("Error fetching user ebooks:", error);
     throw new Error(`Failed to fetch user ebooks: ${error.message}`);
   }
 };
@@ -1142,19 +1259,25 @@ const getEbooksForUserEndPoint = async (req, res) => {
     const filterBy = req.query.filter || "";
     const userId = req.user._id;
 
-    const result = await getEbooksForUser(userId, page, limit, searchQuery, filterBy);
+    const result = await getEbooksForUser(
+      userId,
+      page,
+      limit,
+      searchQuery,
+      filterBy
+    );
 
     return res.status(200).json({
       success: true,
       data: result.ebooks,
-      pagination: result.pagination
+      pagination: result.pagination,
     });
   } catch (error) {
-    console.error('Error in getUserEbooks:', error);
+    console.error("Error in getUserEbooks:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch user ebooks",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
@@ -1163,17 +1286,19 @@ const checkStoryUpdates = async (req, res) => {
   try {
     const { id } = req.params;
     const lastKnownContentCount = parseInt(req.query.lastContentCount) || 0;
-    const lastCheckDate = req.query.lastCheckDate ? new Date(req.query.lastCheckDate) : null;
+    const lastCheckDate = req.query.lastCheckDate
+      ? new Date(req.query.lastCheckDate)
+      : null;
 
     // Fetch story with minimal fields needed
     const story = await Story.findById(id)
-      .select('title contentCount content contentTitles updatedAt completed')
+      .select("title contentCount content contentTitles updatedAt completed")
       .lean();
 
     if (!story) {
       return res.status(404).json({
         success: false,
-        message: "Story not found"
+        message: "Story not found",
       });
     }
 
@@ -1183,7 +1308,7 @@ const checkStoryUpdates = async (req, res) => {
         success: true,
         hasUpdates: false,
         isComplete: true,
-        message: "This story is already complete"
+        message: "This story is already complete",
       });
     }
 
@@ -1191,11 +1316,15 @@ const checkStoryUpdates = async (req, res) => {
     const hasNewChapters = story.contentCount > lastKnownContentCount;
 
     // Check if the story was updated after the last check date
-    const wasUpdatedAfterLastCheck = lastCheckDate ?
-      new Date(story.updatedAt) > new Date(lastCheckDate) : false;
+    const wasUpdatedAfterLastCheck = lastCheckDate
+      ? new Date(story.updatedAt) > new Date(lastCheckDate)
+      : false;
 
     // Calculate the number of new chapters
-    const newChaptersCount = Math.max(0, story.contentCount - lastKnownContentCount);
+    const newChaptersCount = Math.max(
+      0,
+      story.contentCount - lastKnownContentCount
+    );
 
     // Get titles of new chapters if there are any
     let newChapterDetails = [];
@@ -1205,7 +1334,9 @@ const checkStoryUpdates = async (req, res) => {
           newChapterDetails.push({
             index: i,
             title: story.contentTitles[i] || `Chapter ${i + 1}`,
-            preview: story.content[i] ? `${story.content[i].substring(0, 100)}...` : null
+            preview: story.content[i]
+              ? `${story.content[i].substring(0, 100)}...`
+              : null,
           });
         }
       }
@@ -1220,15 +1351,502 @@ const checkStoryUpdates = async (req, res) => {
       newChapters: newChapterDetails,
       lastUpdated: story.updatedAt,
       storyTitle: story.title,
-      isComplete: story.completed
+      isComplete: story.completed,
     });
-
   } catch (error) {
     console.error("Error in checkStoryUpdates:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to check for story updates",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+// Add this function to your story.js controller
+
+/**
+ * Fetch a single eBook by its ID
+ * Returns similar fields to getAllStories for consistency
+ */
+const getSpecificEbook = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?._id;
+
+    // Validate ID format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid story ID format",
+      });
+    }
+
+    // Create an aggregation pipeline to get similar fields to getAllStories
+    const pipeline = [
+      // Match the specific story by ID
+      { $match: { _id: mongoose.Types.ObjectId(id) } },
+
+      // Add calculated fields
+      {
+        $addFields: {
+          likeCount: {
+            $cond: {
+              if: { $isArray: "$likes" },
+              then: { $size: "$likes" },
+              else: 0,
+            },
+          },
+          contentCount: {
+            $cond: {
+              if: { $isArray: "$content" },
+              then: { $size: "$content" },
+              else: 0,
+            },
+          },
+        },
+      },
+
+      // Join with users collection for author info
+      {
+        $lookup: {
+          from: "users",
+          let: { authorId: "$author" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$authorId"] } } },
+            { $project: { username: 1, photo: 1 } },
+          ],
+          as: "authorInfo",
+        },
+      },
+      { $unwind: "$authorInfo" },
+
+      // Add like status and reading list status if user is authenticated
+      ...(userId
+        ? [
+            {
+              $lookup: {
+                from: "users",
+                let: { storyId: { $toString: "$_id" } },
+                pipeline: [
+                  { $match: { _id: userId } },
+                  {
+                    $project: {
+                      _id: 0,
+                      // Check if likes array exists and contains story ID
+                      hasLiked: {
+                        $cond: {
+                          if: { $isArray: "$likes" },
+                          then: {
+                            $in: [
+                              "$$storyId",
+                              {
+                                $map: {
+                                  input: "$likes",
+                                  as: "id",
+                                  in: { $toString: "$$id" },
+                                },
+                              },
+                            ],
+                          },
+                          else: false,
+                        },
+                      },
+                      // Check if readList array exists and contains story ID
+                      isInReadingList: {
+                        $cond: {
+                          if: { $isArray: "$readList" },
+                          then: {
+                            $in: [
+                              "$$storyId",
+                              {
+                                $map: {
+                                  input: "$readList",
+                                  as: "id",
+                                  in: { $toString: "$$id" },
+                                },
+                              },
+                            ],
+                          },
+                          else: false,
+                        },
+                      },
+                    },
+                  },
+                ],
+                as: "userInteraction",
+              },
+            },
+            {
+              $addFields: {
+                userInteraction: {
+                  $cond: {
+                    if: { $gt: [{ $size: "$userInteraction" }, 0] },
+                    then: { $arrayElemAt: ["$userInteraction", 0] },
+                    else: { hasLiked: false, isInReadingList: false },
+                  },
+                },
+              },
+            },
+            {
+              $addFields: {
+                likeStatus: { $ifNull: ["$userInteraction.hasLiked", false] },
+                isInReadingList: {
+                  $ifNull: ["$userInteraction.isInReadingList", false],
+                },
+              },
+            },
+            {
+              $project: {
+                userInteraction: 0,
+              },
+            },
+          ]
+        : [
+            {
+              $addFields: {
+                likeStatus: false,
+                isInReadingList: false,
+              },
+            },
+          ]),
+
+      // Format the output fields
+      {
+        $project: {
+          _id: 1,
+          title: 1,
+          slug: 1,
+          summary: 1,
+          tags: 1,
+          labels: 1,
+          image: 1,
+          readTime: 1,
+          free: 1,
+          prizePerChapter: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          author: {
+            _id: "$author",
+            username: "$authorInfo.username",
+            photo: "$authorInfo.photo",
+          },
+          likeCount: 1,
+          commentCount: 1,
+          averageRating: 1,
+          ratingCount: 1,
+          contentCount: 1,
+          likeStatus: 1,
+          isInReadingList: 1,
+          contentTitles: 1,
+          completed: 1,
+          views: 1,
+          isFeatured: 1,
+          ratings: {
+            $cond: {
+              if: { $isArray: "$ratings" },
+              then: "$ratings",
+              else: [],
+            },
+          },
+        },
+      },
+    ];
+
+    // Execute the aggregation
+    const stories = await Story.aggregate(pipeline);
+
+    // Check if story was found
+    if (!stories || stories.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Story not found",
+      });
+    }
+
+    Story.findByIdAndUpdate(
+      id,
+      { $inc: { views: 1 } },
+      { new: false }  // Don't wait for the updated document
+    ).catch(err => console.error("Failed to update view count:", err));
+    
+
+    // Return the formatted story
+    return res.status(200).json({
+      success: true,
+      data: stories[0],
+    });
+  } catch (error) {
+    console.error("Error in getSpecificEbook:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+/**
+ * Get stories by specific tag
+ * Returns stories that match the exact requested tag with proper ranking
+ */
+const getStoriesByTag = async (req, res) => {
+  try {
+    const { tag } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const pageSize = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * pageSize;
+    const userId = req.user?._id;
+
+    // Validate tag format - prevent injection
+    const validTags = [
+      "Romance", "Werewolf", "Mafia", "System", "Fantasy", 
+      "Urban", "YA/TEEN", "Paranormal", "Mystery/Thriller", 
+      "Eastern", "Games", "History", "MM Romance", 
+      "Sci-Fi", "War", "Other"
+    ];
+    
+    if (!validTags.includes(tag)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid tag specified"
+      });
+    }
+
+    // Create pipeline using the same logic as getAllStories
+    const pipeline = [
+      // Match only stories with the exact tag
+      { 
+        $match: { 
+          tags: tag 
+        } 
+      },
+      // Stage 1: Calculate likeCount and contentCount
+      {
+        $addFields: {
+          likeCount: {
+            $cond: {
+              if: { $isArray: "$likes" },
+              then: { $size: "$likes" },
+              else: 0,
+            },
+          },
+          contentCount: {
+            $cond: {
+              if: { $isArray: "$content" },
+              then: { $size: "$content" },
+              else: 0,
+            },
+          },
+        },
+      },
+      // Stage 2: Calculate rankPoints - consistent with getAllStories
+      {
+        $addFields: {
+          rankPoints: {
+            $add: [
+              { $multiply: ["$commentCount", 2] },
+              "$likeCount",
+              {
+                $cond: [
+                  { $gte: ["$averageRating", 3] },
+                  { $multiply: ["$averageRating", "$ratingCount", 10] },
+                  {
+                    $multiply: [
+                      { $subtract: [3, "$averageRating"] },
+                      "$ratingCount",
+                      -10,
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      // Stage 3: Join with users collection for author info
+      {
+        $lookup: {
+          from: "users",
+          let: { authorId: "$author" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$authorId"] } } },
+            { $project: { username: 1 } },
+          ],
+          as: "authorInfo",
+        },
+      },
+      { $unwind: "$authorInfo" },
+      
+      // Stage 4: Add user interaction data if logged in
+      ...(userId
+        ? [
+            {
+              $lookup: {
+                from: "users",
+                let: { storyId: { $toString: "$_id" } },
+                pipeline: [
+                  { $match: { _id: userId } },
+                  {
+                    $project: {
+                      _id: 0,
+                      hasLiked: {
+                        $cond: {
+                          if: { $isArray: "$likes" },
+                          then: {
+                            $in: [
+                              "$$storyId",
+                              {
+                                $map: {
+                                  input: "$likes",
+                                  as: "id",
+                                  in: { $toString: "$$id" },
+                                },
+                              },
+                            ],
+                          },
+                          else: false,
+                        },
+                      },
+                      isInReadingList: {
+                        $cond: {
+                          if: { $isArray: "$readList" },
+                          then: {
+                            $in: [
+                              "$$storyId",
+                              {
+                                $map: {
+                                  input: "$readList",
+                                  as: "id",
+                                  in: { $toString: "$$id" },
+                                },
+                              },
+                            ],
+                          },
+                          else: false,
+                        },
+                      },
+                    },
+                  },
+                ],
+                as: "userInteraction",
+              },
+            },
+            {
+              $addFields: {
+                userInteraction: {
+                  $cond: {
+                    if: { $gt: [{ $size: "$userInteraction" }, 0] },
+                    then: { $arrayElemAt: ["$userInteraction", 0] },
+                    else: { hasLiked: false, isInReadingList: false },
+                  },
+                },
+              },
+            },
+            {
+              $addFields: {
+                likeStatus: { $ifNull: ["$userInteraction.hasLiked", false] },
+                isInReadingList: {
+                  $ifNull: ["$userInteraction.isInReadingList", false],
+                },
+              },
+            },
+            {
+              $project: {
+                userInteraction: 0,
+              },
+            },
+          ]
+        : [
+            {
+              $addFields: {
+                likeStatus: false,
+                isInReadingList: false,
+              },
+            },
+          ]),
+      
+      // Stage 5: Apply default sorting by rank
+      { $sort: { rankPoints: -1 } },
+      
+      // Stage 6: Pagination with $facet
+      {
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [
+            { $skip: skip },
+            { $limit: pageSize },
+            {
+              $project: {
+                _id: 1,
+                title: 1,
+                slug: 1,
+                summary: 1,
+                tags: 1,
+                labels: 1,
+                image: 1,
+                readTime: 1,
+                free: 1,
+                prizePerChapter: 1,
+                createdAt: 1,
+                updatedAt: 1,
+                author: {
+                  _id: "$author",
+                  username: "$authorInfo.username",
+                },
+                likeCount: 1,
+                commentCount: 1,
+                averageRating: 1,
+                ratingCount: 1,
+                rankPoints: 1,
+                contentCount: 1,
+                likeStatus: { $ifNull: ["$likeStatus", false] },
+                isInReadingList: { $ifNull: ["$isInReadingList", false] },
+                views: 1,
+                isFeatured: 1,
+                ratings: {
+                  $cond: {
+                    if: { $isArray: "$ratings" },
+                    then: "$ratings",
+                    else: [],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    // Execute the aggregation
+    const [result] = await Story.aggregate(pipeline);
+    const { metadata, data } = result || { metadata: [], data: [] };
+    const totalCount = metadata[0]?.total || 0;
+
+    // Increment view counts for the displayed stories asynchronously
+    if (data.length > 0) {
+      const storyIds = data.map(story => story._id);
+      Story.updateMany(
+        { _id: { $in: storyIds } },
+        { $inc: { views: 1 } }
+      ).catch(err => console.warn("Failed to update view counts:", err));
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: data.length,
+      data: data,
+      page: page,
+      pages: Math.ceil(totalCount / pageSize),
+      total: totalCount,
+      tag: tag
+    });
+  } catch (error) {
+    console.error("Error in getStoriesByTag:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 };
@@ -1244,5 +1862,7 @@ module.exports = {
   editStory,
   deleteStory,
   getEbooksForUserEndPoint,
-  checkStoryUpdates
+  checkStoryUpdates,
+  getSpecificEbook,
+  getStoriesByTag
 };

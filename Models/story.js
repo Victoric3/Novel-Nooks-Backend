@@ -38,7 +38,11 @@ const StorySchema = new mongoose.Schema(
     },
     tags: {
       type: [String],
-      default: ["Multi-genre"]
+      default: ["system"]
+    },
+    labels: {
+      type: [String],
+      default: ["system"],
     },
     summary: {
       type: String,
@@ -106,6 +110,16 @@ const StorySchema = new mongoose.Schema(
     completed: {
       type: Boolean,
       default: true,
+    },
+    isFeatured: {
+      type: Boolean,
+      default: false,
+      index: true  // Add index for faster queries
+    },
+    views: {
+      type: Number,
+      default: 0,
+      index: true  // Add index for better performance on sorting/filtering
     },
   },
   { timestamps: true }
