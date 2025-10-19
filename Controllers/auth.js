@@ -148,7 +148,7 @@ const register = async (req, res) => {
     res.status(201)
       .json({
         status: "success",
-        message: "Registration successful. Please check your email to verify your account.",
+        message: "Registration successful. Please check your email  to verify your account.",
       });
   } catch (error) {
     console.error("Registration error:", error);
