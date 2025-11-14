@@ -15,14 +15,13 @@ const {
 const crypto = require("crypto");
 const { generateAnonymousId } = require("../Helpers/auth/anonymousHelper");
 const rateLimit = require("express-rate-limit");
-const { OAuth2Client } = require('google-auth-library');
+const { OAuth2Client } = require("google-auth-library");
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-const { 
-  sendLoginNotification, 
-  sendPasswordResetNotification, 
-  sendUsernameChangeNotification 
-} = require('./notification');
-
+const {
+  sendLoginNotification,
+  sendPasswordResetNotification,
+  sendUsernameChangeNotification,
+} = require("./notification");
 
 const getPrivateData = (req, res, next) => {
   try {
@@ -43,14 +42,16 @@ const getPrivateData = (req, res, next) => {
 
 const testmail = async (req, res) => {
   try {
-    new Email(req.body.user, req.body.verificationToken).sendPasswordReset()
-      .catch(err => console.error("Email sending error:", err));
+    console.log("Starting test");
+    new Email(req.body.user, req.body.verificationToken)
+      .sendPasswordReset()
+      .catch((err) => console.error("Email sending error:", err));
     res.status(201).json({
       success: true,
       message: "Email sent successfully",
     });
   } catch (e) {
-    console.log(e)
+    console.log(e);
     res.status(500).json({
       success: false,
       message: "Error You are not authorized to access this route",
@@ -59,14 +60,22 @@ const testmail = async (req, res) => {
 };
 
 const register = async (req, res) => {
-  const { firstname, lastname, email, password, ipAddress, anonymousId, deviceInfo } = req.body;
-  console.log("register called", req.body)
+  const {
+    firstname,
+    lastname,
+    email,
+    password,
+    ipAddress,
+    anonymousId,
+    deviceInfo,
+  } = req.body;
+  console.log("register called", req.body);
   try {
     // Check if this is an anonymous account conversion
     if (anonymousId) {
       const anonymousUser = await User.findOne({
         anonymousId,
-        isAnonymous: true
+        isAnonymous: true,
       });
 
       if (anonymousUser) {
@@ -91,20 +100,27 @@ const register = async (req, res) => {
 
         // Add new session
         await anonymousUser.addSession({
-          token: crypto.createHash('sha256').update(verificationToken).digest('hex'),
+          token: crypto
+            .createHash("sha256")
+            .update(verificationToken)
+            .digest("hex"),
           device: deviceInfo,
-          ipAddress
+          ipAddress,
         });
 
         await anonymousUser.save();
 
         // Send verification email
-        new Email(anonymousUser, verificationToken).sendConfirmEmail()
-          .catch(err => console.error("Email sending error:", err));
+        new Email(anonymousUser, verificationToken)
+          .sendConfirmEmail()
+          .catch((err) => console.error("Email sending error:", err));
 
-        return sendToken(anonymousUser, 200, res,
+        return sendToken(
+          anonymousUser,
+          200,
+          res,
           "Anonymous account converted successfully. Please check your email to verify your account.",
-          deviceInfo
+          deviceInfo,
         );
       }
     }
@@ -114,7 +130,7 @@ const register = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Email already registered"
+        errorMessage: "Email already registered",
       });
     }
 
@@ -131,7 +147,7 @@ const register = async (req, res) => {
       temporary: false,
       emailStatus: "pending",
       passwordHistory: [password],
-      vouchers: 500  // Add 500 vouchers signup bonus
+      vouchers: 500, // Add 500 vouchers signup bonus
     });
 
     newUser.passwordHistory = newUser.passwordHistory || [];
@@ -142,19 +158,20 @@ const register = async (req, res) => {
 
     await newUser.save();
 
-    new Email(newUser, verificationToken).sendConfirmEmail()
-      .catch(err => console.error("Email sending error:", err));
+    new Email(newUser, verificationToken)
+      .sendConfirmEmail()
+      .catch((err) => console.error("Email sending error:", err));
 
-    res.status(201)
-      .json({
-        status: "success",
-        message: "Registration successful. Please check your email  to verify your account.",
-      });
+    res.status(201).json({
+      status: "success",
+      message:
+        "Registration successful. Please check your email  to verify your account.",
+    });
   } catch (error) {
     console.error("Registration error:", error);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 };
@@ -166,7 +183,7 @@ const login = async (req, res) => {
     if (!identity || !password) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Email and password are required"
+        errorMessage: "Email and password are required",
       });
     }
 
@@ -175,7 +192,7 @@ const login = async (req, res) => {
     if (!user || !comparePassword(password, user.password)) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Invalid credentials"
+        errorMessage: "Invalid credentials",
       });
     }
 
@@ -185,13 +202,14 @@ const login = async (req, res) => {
       await user.save();
 
       // Send verification email in background
-      new Email(user, verificationToken).sendUnUsualSignIn()
-        .catch(err => console.error("Email sending error:", err));
+      new Email(user, verificationToken)
+        .sendUnUsualSignIn()
+        .catch((err) => console.error("Email sending error:", err));
 
       return res.status(403).json({
         status: "verification_required",
         message: "New login location detected. Please verify your email.",
-        requiresVerification: true
+        requiresVerification: true,
       });
     }
 
@@ -203,12 +221,14 @@ const login = async (req, res) => {
       sendLoginNotification(user._id, {
         deviceInfo: device,
         ipAddress,
-        time: new Date().toISOString()
-      }).catch(error => {
+        time: new Date().toISOString(),
+      }).catch((error) => {
         console.log(`Failed to send login notification: ${error.message}`);
       });
     } catch (notificationError) {
-      console.log(`Error preparing login notification: ${notificationError.message}`);
+      console.log(
+        `Error preparing login notification: ${notificationError.message}`,
+      );
     }
 
     return sendToken(user, 200, req, res, "Login successful", device);
@@ -216,7 +236,7 @@ const login = async (req, res) => {
     console.error("Login error:", error);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 };
@@ -240,7 +260,7 @@ const changeUserName = async (req, res) => {
         errorMessage: "There is already a user with this username",
       });
     }
-    
+
     const oldUsername = user.username; // Store old username before changing
     user.username = newUsername;
     await user.save();
@@ -248,8 +268,12 @@ const changeUserName = async (req, res) => {
     // Send username change notification
     sendUsernameChangeNotification(user._id, {
       oldUsername,
-      newUsername
-    }).catch(err => console.warn(`Failed to send username change notification: ${err.message}`));
+      newUsername,
+    }).catch((err) =>
+      console.warn(
+        `Failed to send username change notification: ${err.message}`,
+      ),
+    );
 
     res.status(200).json({
       message: "username updated successfully",
@@ -296,12 +320,12 @@ const forgotpassword = async (req, res) => {
 
 const resetpassword = async (req, res) => {
   const { resetPasswordToken, newPassword } = req.body;
-  
+
   try {
     if (!resetPasswordToken) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Please provide a valid token"
+        errorMessage: "Please provide a valid token",
       });
     }
 
@@ -312,13 +336,13 @@ const resetpassword = async (req, res) => {
 
     const user = await User.findOne({
       verificationToken: hashedToken,
-      verificationTokenExpires: { $gt: Date.now() }
+      verificationTokenExpires: { $gt: Date.now() },
     }).select("+password +passwordHistory");
 
     if (!user) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Invalid token or Session Expired"
+        errorMessage: "Invalid token or Session Expired",
       });
     }
 
@@ -326,7 +350,7 @@ const resetpassword = async (req, res) => {
     if (await user.isPasswordPreviouslyUsed(newPassword)) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Please use a password you haven't used before"
+        errorMessage: "Please use a password you haven't used before",
       });
     }
 
@@ -349,18 +373,22 @@ const resetpassword = async (req, res) => {
     // Send password reset notification
     sendPasswordResetNotification(user._id, {
       ipAddress: req.ip,
-      time: new Date().toISOString()
-    }).catch(err => console.warn(`Failed to send password reset notification: ${err.message}`));
+      time: new Date().toISOString(),
+    }).catch((err) =>
+      console.warn(
+        `Failed to send password reset notification: ${err.message}`,
+      ),
+    );
 
     return res.status(200).json({
       success: true,
-      message: "Password reset successful"
+      message: "Password reset successful",
     });
   } catch (err) {
     console.error("Password reset error:", err);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 };
@@ -376,13 +404,13 @@ const confirmEmailAndSignUp = catchAsync(async (req, res) => {
     const user = await User.findOne({
       verificationToken: hashedToken,
       verificationTokenExpires: { $gt: Date.now() },
-      emailStatus: "pending"
+      emailStatus: "pending",
     });
 
     if (!user) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Invalid or expired verification token"
+        errorMessage: "Invalid or expired verification token",
       });
     }
 
@@ -392,15 +420,23 @@ const confirmEmailAndSignUp = catchAsync(async (req, res) => {
     await user.save();
 
     // Send welcome email after confirmation
-    new Email(user).sendWelcome()
-      .catch(err => console.error("Welcome email error:", err));
+    new Email(user)
+      .sendWelcome()
+      .catch((err) => console.error("Welcome email error:", err));
 
-    return sendToken(user, 200, req, res, "Email verified successfully. Welcome to EulaIQ!", deviceInfo);
+    return sendToken(
+      user,
+      200,
+      req,
+      res,
+      "Email verified successfully. Welcome to EulaIQ!",
+      deviceInfo,
+    );
   } catch (error) {
     console.error("Email confirmation error:", error);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 });
@@ -408,16 +444,19 @@ const confirmEmailAndSignUp = catchAsync(async (req, res) => {
 const unUsualSignIn = async (req, res) => {
   const { token, ipAddress, device } = req.body;
   try {
-    const hashedToken = crypto.createHash("shake256").update(token).digest("hex");
+    const hashedToken = crypto
+      .createHash("shake256")
+      .update(token)
+      .digest("hex");
     const user = await User.findOne({
       verificationToken: hashedToken,
-      verificationTokenExpires: { $gt: Date.now() }
+      verificationTokenExpires: { $gt: Date.now() },
     });
 
     if (!user) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "Invalid token or session expired"
+        errorMessage: "Invalid token or session expired",
       });
     }
 
@@ -432,14 +471,13 @@ const unUsualSignIn = async (req, res) => {
     console.error("Unusual signin error:", err);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 };
 
 const resendVerificationToken = catchAsync(async (req, res, next) => {
   try {
-
     const { email } = req.body;
 
     const user = await User.findOne({
@@ -464,7 +502,7 @@ const resendVerificationToken = catchAsync(async (req, res, next) => {
     console.error(e);
     res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 });
@@ -473,11 +511,11 @@ const googleSignIn = async (req, res) => {
   try {
     // console.log("called google signin")
     const { idToken, deviceInfo, ipAddress } = req.body;
-    
+
     // Verify Google token
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID
+      audience: process.env.GOOGLE_CLIENT_ID,
     });
 
     const payload = ticket.getPayload();
@@ -485,23 +523,20 @@ const googleSignIn = async (req, res) => {
 
     // Find or create user
     let user = await User.findOne({
-      $or: [
-        { email, authProvider: 'google' },
-        { googleId }
-      ]
+      $or: [{ email, authProvider: "google" }, { googleId }],
     });
 
     if (user) {
       // Update existing Google user
       user.photo = picture || user.photo;
-      user.firstname = name?.split(' ')[0] || user.firstname;
-      user.lastname = name?.split(' ').slice(1).join(' ') || user.lastname;
+      user.firstname = name?.split(" ")[0] || user.firstname;
+      user.lastname = name?.split(" ").slice(1).join(" ") || user.lastname;
 
       // Add session
       await user.addSession({
-        token: crypto.createHash('sha256').update(googleId).digest('hex'),
+        token: crypto.createHash("sha256").update(googleId).digest("hex"),
         device: deviceInfo,
-        ipAddress
+        ipAddress,
       });
 
       addIpAddress(user, ipAddress);
@@ -514,8 +549,9 @@ const googleSignIn = async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
-        status: 'auth_method_mismatch',
-        errorMessage: 'This email is registered with password authentication. Please sign in with your password.'
+        status: "auth_method_mismatch",
+        errorMessage:
+          "This email is registered with password authentication. Please sign in with your password.",
       });
     }
 
@@ -525,40 +561,41 @@ const googleSignIn = async (req, res) => {
     // Create new Google user
     user = await User.create({
       email,
-      firstname: name?.split(' ')[0] || '',
-      lastname: name?.split(' ').slice(1).join(' ') || '',
+      firstname: name?.split(" ")[0] || "",
+      lastname: name?.split(" ").slice(1).join(" ") || "",
       googleId,
       photo: picture,
       ipAddress: [ipAddress],
       deviceInfo: [deviceInfo],
       emailStatus: "confirmed",
-      authProvider: 'google',
+      authProvider: "google",
       isAnonymous: false,
       username: await generateUniqueUsername(),
       password: newPassword,
       passwordHistory: [newPassword],
-      vouchers: 500  // Add 500 vouchers signup bonus
+      vouchers: 500, // Add 500 vouchers signup bonus
     });
 
     // Add initial session
     await user.addSession({
-      token: crypto.createHash('sha256').update(googleId).digest('hex'),
+      token: crypto.createHash("sha256").update(googleId).digest("hex"),
       device: deviceInfo,
-      ipAddress
+      ipAddress,
     });
 
     await user.save();
 
     // Send welcome email
-    new Email(user).sendWelcome()
-      .catch(err => console.error("Welcome email error:", err));
+    new Email(user)
+      .sendWelcome()
+      .catch((err) => console.error("Welcome email error:", err));
 
     return sendToken(user, 201, req, res, "Welcome to EulaIQ!", deviceInfo);
   } catch (error) {
     console.error("Google sign in error:", error);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Could not verify Google credentials"
+      errorMessage: "Could not verify Google credentials",
     });
   }
 };
@@ -566,51 +603,55 @@ const googleSignIn = async (req, res) => {
 const verificationRateLimit = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 3,
-  message: "Too many verification attempts"
+  message: "Too many verification attempts",
 });
 
 const signOut = async (req, res) => {
   try {
     // Get user from request (already set by validateSession middleware)
     const user = req.user;
-    
+
     // Get token from cookie (same way validateSession gets it)
     const token = getAccessTokenFromCookies(req);
-    
+
     if (!token) {
       return res.status(400).json({
         status: "failed",
-        errorMessage: "No authentication token provided"
+        errorMessage: "No authentication token provided",
       });
     }
-    
+
     // Hash the token to match what's stored in the database
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
     // Remove this specific session from the sessions array
-    user.sessions = user.sessions.filter(session => session.token !== hashedToken);
-    
+    user.sessions = user.sessions.filter(
+      (session) => session.token !== hashedToken,
+    );
+
     // Remove the token from validTokens array
-    user.validTokens = user.validTokens.filter(validToken => validToken !== hashedToken);
-    
+    user.validTokens = user.validTokens.filter(
+      (validToken) => validToken !== hashedToken,
+    );
+
     await user.save();
-    
+
     // Clear auth cookie
     res.clearCookie("access_token", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict"
+      sameSite: "strict",
     });
-    
+
     return res.status(200).json({
       status: "success",
-      message: "Successfully signed out"
+      message: "Successfully signed out",
     });
   } catch (error) {
     // console.error("Sign out error:", error);
     return res.status(500).json({
       status: "failed",
-      errorMessage: "Internal server error"
+      errorMessage: "Internal server error",
     });
   }
 };
@@ -628,5 +669,5 @@ module.exports = {
   changeUserName,
   verificationRateLimit,
   googleSignIn,
-  signOut
+  signOut,
 };
