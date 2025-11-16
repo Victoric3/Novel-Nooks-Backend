@@ -622,8 +622,10 @@ const signOut = async (req, res) => {
     console.log("Test if hit");
     // Get token from cookie (same way validateSession gets it)
     const token = getAccessTokenFromCookies(req);
+    console.log("Token:", { token });
 
     if (!token) {
+      console.log("No token provided");
       return res.status(400).json({
         status: "failed",
         errorMessage: "No authentication token provided",
@@ -632,6 +634,7 @@ const signOut = async (req, res) => {
 
     // Hash the token to match what's stored in the database
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    console.log("Hashed token:", { hashedToken });
 
     // Remove this specific session from the sessions array
     user.sessions = user.sessions.filter(
@@ -646,7 +649,7 @@ const signOut = async (req, res) => {
     await user.save();
 
     // Clear auth cookie
-    res.clearCookie("access_token", {
+    await res.clearCookie("access_token", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
