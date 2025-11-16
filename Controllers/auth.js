@@ -22,7 +22,7 @@ const {
   sendPasswordResetNotification,
   sendUsernameChangeNotification,
 } = require("./notification");
-
+const { getAccessTokenFromCookies } = require("../Helpers/auth/tokenHelpers");
 const getPrivateData = (req, res, next) => {
   try {
     console.log("got access to route");
@@ -609,20 +609,10 @@ const verificationRateLimit = rateLimit({
 const signOut = async (req, res) => {
   try {
     // Get user from request (already set by validateSession middleware)
-    console.log("Req", { req });
     const user = req.user;
     console.log("User:", { user });
 
-    console.log("Logout route hit!", {
-      user: user?.email || user?._id || "unknown user",
-      timestamp: new Date().toISOString(),
-      ip: req.ip,
-      userAgent: req.get("User-Agent"),
-    });
-    console.log("Test if hit");
-    // Get token from cookie (same way validateSession gets it)
     const token = getAccessTokenFromCookies(req);
-    console.log("Token:", { token });
 
     if (!token) {
       console.log("No token provided");
@@ -634,7 +624,6 @@ const signOut = async (req, res) => {
 
     // Hash the token to match what's stored in the database
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
-    console.log("Hashed token:", { hashedToken });
 
     // Remove this specific session from the sessions array
     user.sessions = user.sessions.filter(
@@ -649,7 +638,7 @@ const signOut = async (req, res) => {
     await user.save();
 
     // Clear auth cookie
-    await res.clearCookie("access_token", {
+    await res.clearCookie("token", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
