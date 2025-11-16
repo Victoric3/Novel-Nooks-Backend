@@ -609,8 +609,17 @@ const verificationRateLimit = rateLimit({
 const signOut = async (req, res) => {
   try {
     // Get user from request (already set by validateSession middleware)
+    console.log("Req", { req });
     const user = req.user;
+    console.log("User:", { user });
 
+    console.log("Logout route hit!", {
+      user: user?.email || user?._id || "unknown user",
+      timestamp: new Date().toISOString(),
+      ip: req.ip,
+      userAgent: req.get("User-Agent"),
+    });
+    console.log("Test if hit");
     // Get token from cookie (same way validateSession gets it)
     const token = getAccessTokenFromCookies(req);
 
