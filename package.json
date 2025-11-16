@@ -1,46 +1,48 @@
 {
-    "name": "backend",
-    "version": "1.0.0",
-    "description": "",
-    "main": "server.js",
-    "scripts": {
-        "start": "node --max-old-space-size=4096 server.js",
-        "start:dev": "nodemon --max-old-space-size=4096 server.js"
-    },
-    "engines": {
-        "node": ">=20.0.0"
-    },
-    "keywords": [],
-    "author": "chukwujiobi victor ifeanyi",
-    "license": "ISC",
-    "dependencies": {
-        "axios": "^1.6.5",
-        "bcryptjs": "^2.4.3",
-        "cookie-parser": "^1.4.7",
-        "cors": "^2.8.5",
-        "dotenv": "^15.0.1",
-        "epub-gen": "^0.1.0",
-        "express": "^4.18.2",
-        "express-async-handler": "^1.2.0",
-        "express-fileupload": "^1.4.3",
-        "express-rate-limit": "^7.1.5",
-        "firebase-admin": "^13.0.2",
-        "fs-extra": "^11.3.0",
-        "geolib": "^3.3.4",
-        "google-auth-library": "^9.15.1",
-        "googleapis": "^128.0.0",
-        "html-to-text": "^9.0.5",
-        "jsonwebtoken": "^8.5.1",
-        "mongoose": "^6.1.8",
-        "multer": "^1.4.4",
-        "nodemailer": "^6.9.6",
-        "path": "^0.12.7",
-        "pdfjs-dist": "^3.11.174",
-        "pug": "^3.0.2",
-        "sitemap": "^7.1.1",
-        "slugify": "^1.6.5"
-    },
-    "devDependencies": {
-        "nodemon": "^3.1.7"
-    }
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --max-old-space-size=4096 server.js",
+    "start:dev": "nodemon --max-old-space-size=4096 server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [],
+  "author": "chukwujiobi victor ifeanyi",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.5",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^15.0.1",
+    "epub-gen": "^0.1.0",
+    "express": "^4.18.2",
+    "express-async-handler": "^1.2.0",
+    "express-fileupload": "^1.4.3",
+    "express-rate-limit": "^7.1.5",
+    "firebase-admin": "^13.0.2",
+    "form-data": "^4.0.4",
+    "fs-extra": "^11.3.0",
+    "geolib": "^3.3.4",
+    "google-auth-library": "^9.15.1",
+    "googleapis": "^128.0.0",
+    "html-to-text": "^9.0.5",
+    "jsonwebtoken": "^8.5.1",
+    "mongoose": "^6.1.8",
+    "multer": "^1.4.4",
+    "nodemailer": "^6.9.6",
+    "path": "^0.12.7",
+    "pdfjs-dist": "^3.11.174",
+    "pug": "^3.0.2",
+    "resend": "^6.4.2",
+    "sitemap": "^7.1.1",
+    "slugify": "^1.6.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
 }

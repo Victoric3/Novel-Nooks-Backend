@@ -11,7 +11,6 @@ const isTokenIncluded = (req) => {
 const getAccessTokenFromCookies = (req) => {
   // Check cookie first
   const cookieToken = req.cookies?.token;
-
   // Check Authorization header if no cookie token
   const bearerToken = req.headers.authorization?.startsWith("Bearer ")
     ? req.headers.authorization.split(" ")[1]
@@ -19,7 +18,6 @@ const getAccessTokenFromCookies = (req) => {
 
   // Use whichever token is available
   const token = cookieToken || bearerToken;
-  // console.log("token from cookie: ", token);
 
   if (!token) {
     throw new Error("Authentication token is missing");
@@ -32,22 +30,24 @@ const getAccessTokenFromCookies = (req) => {
 const sendToken = async (user, statusCode, req, res, message, device) => {
   const token = user.generateJwtFromUser();
   const cookieOptions = {
-    expires: new Date(Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000),
+    expires: new Date(
+      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000,
+    ),
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: 'strict',
-    path: '/'
+    sameSite: "strict",
+    path: "/",
   };
 
   // Handle device object properly
   let deviceInfo = device;
-  
+
   // If deviceInfo is provided as a string, parse it
-  if (typeof deviceInfo === 'string') {
+  if (typeof deviceInfo === "string") {
     try {
       deviceInfo = JSON.parse(deviceInfo);
     } catch (err) {
-      console.warn('Invalid device info format:', err.message);
+      console.warn("Invalid device info format:", err.message);
       // Continue without device info
       deviceInfo = null;
     }
@@ -55,23 +55,21 @@ const sendToken = async (user, statusCode, req, res, message, device) => {
 
   // Add session and token validation
   const sessionData = {
-    token: crypto.createHash('sha256').update(token).digest('hex'),
+    token: crypto.createHash("sha256").update(token).digest("hex"),
     device: deviceInfo,
-    ipAddress: req.ip
+    ipAddress: req.ip,
   };
-  
+
   await user.addSession(sessionData);
   user.validTokens = user.validTokens || [];
   user.validTokens.push(sessionData.token);
   await user.save();
 
-  return res.status(statusCode)
-    .cookie("token", token, cookieOptions)
-    .json({
-      status: "success",
-      message,
-      token
-    });
+  return res.status(statusCode).cookie("token", token, cookieOptions).json({
+    status: "success",
+    message,
+    token,
+  });
 };
 
 module.exports = {

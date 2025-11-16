@@ -22,21 +22,23 @@ const getAccessToRoute = async (req, res, next) => {
     const decoded = jwt.verify(accessToken, JWT_SECRET_KEY);
 
     const user = await User.findById(decoded.id);
-    
+
     if (!user || user?.tokenVersion !== decoded?.tokenVersion) {
-      return res
-          .status(401)
-          .json({
-            errorMessage: "You are not authorized to access this route",
-            status: "failed",
-          })
+      return res.status(401).json({
+        errorMessage: "You are not authorized to access this route",
+        status: "failed",
+      });
     }
 
     req.user = user;
     next();
   } catch (error) {
     console.log(error);
-    return next(res.status(500).json({ message: "internal server error", status: 'failed' }));
+    return next(
+      res
+        .status(500)
+        .json({ message: "internal server error", status: "failed" }),
+    );
   }
 };
 
@@ -44,40 +46,50 @@ const validateSession = async (req, res, next) => {
   try {
     const token = getAccessTokenFromCookies(req);
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-    
+
     const user = await User.findById(decoded.id);
-    
-    // Clean up expired sessions first
-    await user.cleanupSessions();
-    
-    if (!user || !user.validateSession(token)) {
+
+    // Check if user exists
+    if (!user) {
       return res.status(401).json({
         status: "failed",
-        errorMessage: "Invalid or expired session"
+        errorMessage: "User not found or token invalid",
+      });
+    }
+
+    // Clean up expired sessions first
+    await user.cleanupSessions();
+
+    if (!user.validateSession(token)) {
+      return res.status(401).json({
+        status: "failed",
+        errorMessage: "Invalid or expired session",
       });
     }
 
     // Update session last active time
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
-    const session = user.sessions.find(s => s.token === hashedToken);
-    
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const session = user.sessions.find((s) => s.token === hashedToken);
+
     if (session) {
       session.lastActive = new Date();
-      
+
       // Check if it's time for daily voucher bonus
       const now = new Date();
       const lastVoucherTime = user.lastVoucherTime || new Date(0);
       const hoursSinceLastVoucher = (now - lastVoucherTime) / (1000 * 60 * 60);
-      
+
       // If more than 24 hours have passed since last voucher bonus
       if (hoursSinceLastVoucher >= 24) {
         // Add 10 vouchers
         user.vouchers += 10;
         // Update last voucher time
         user.lastVoucherTime = now;
-        console.log(`Daily bonus: Added 10 vouchers to user ${user.username}. New total: ${user.vouchers}`);
+        console.log(
+          `Daily bonus: Added 10 vouchers to user ${user.username}. New total: ${user.vouchers}`,
+        );
       }
-      
+
       await user.save();
     }
 
@@ -86,8 +98,8 @@ const validateSession = async (req, res, next) => {
   } catch (error) {
     console.error("Session validation error:", error);
     return res.status(500).json({
-      status: "failed", 
-      errorMessage: "Network Error"
+      status: "failed",
+      errorMessage: "Network Error",
     });
   }
 };
@@ -109,15 +121,15 @@ const isAdmin = (req, res, next) => {
     if (!req.user || req.user.role !== "admin") {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Admin privileges required."
+        message: "Access denied. Admin privileges required.",
       });
     }
-    
+
     next();
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Internal server error checking admin status"
+      message: "Internal server error checking admin status",
     });
   }
 };
