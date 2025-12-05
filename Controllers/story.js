@@ -8,6 +8,7 @@ const path = require("path");
 const EPub = require("epub-gen");
 const os = require("os");
 const util = require("util");
+const mongoose = require("mongoose");
 
 // Updated to handle PDF uploads
 const addStory = async (req, res) => {
@@ -731,7 +732,7 @@ const detailStory = async (req, res) => {
       { $inc: { views: 1 } },
       { new: false }  // Don't wait for the updated document
     ).catch(err => console.error("Failed to update view count:", err));
-    
+
     // Send response with EPUB download
     return res.download(
       epubFilePath,
@@ -1569,7 +1570,7 @@ const getSpecificEbook = async (req, res) => {
       { $inc: { views: 1 } },
       { new: false }  // Don't wait for the updated document
     ).catch(err => console.error("Failed to update view count:", err));
-    
+
 
     // Return the formatted story
     return res.status(200).json({
@@ -1600,12 +1601,12 @@ const getStoriesByTag = async (req, res) => {
 
     // Validate tag format - prevent injection
     const validTags = [
-      "Romance", "Werewolf", "Mafia", "System", "Fantasy", 
-      "Urban", "YA/TEEN", "Paranormal", "Mystery/Thriller", 
-      "Eastern", "Games", "History", "MM Romance", 
+      "Romance", "Werewolf", "Mafia", "System", "Fantasy",
+      "Urban", "YA/TEEN", "Paranormal", "Mystery/Thriller",
+      "Eastern", "Games", "History", "MM Romance",
       "Sci-Fi", "War", "Other"
     ];
-    
+
     if (!validTags.includes(tag)) {
       return res.status(400).json({
         success: false,
@@ -1616,10 +1617,10 @@ const getStoriesByTag = async (req, res) => {
     // Create pipeline using the same logic as getAllStories
     const pipeline = [
       // Match only stories with the exact tag
-      { 
-        $match: { 
-          tags: tag 
-        } 
+      {
+        $match: {
+          tags: tag
+        }
       },
       // Stage 1: Calculate likeCount and contentCount
       {
@@ -1677,7 +1678,7 @@ const getStoriesByTag = async (req, res) => {
         },
       },
       { $unwind: "$authorInfo" },
-      
+
       // Stage 4: Add user interaction data if logged in
       ...(userId
         ? [
@@ -1765,10 +1766,10 @@ const getStoriesByTag = async (req, res) => {
               },
             },
           ]),
-      
+
       // Stage 5: Apply default sorting by rank
       { $sort: { rankPoints: -1 } },
-      
+
       // Stage 6: Pagination with $facet
       {
         $facet: {
