@@ -367,7 +367,6 @@ const resetpassword = async (req, res) => {
     // Invalidate all sessions
     user.sessions = [];
     user.validTokens = [];
-
     await user.save();
 
     // Send password reset notification
